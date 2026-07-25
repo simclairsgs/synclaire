@@ -121,7 +121,6 @@ fn main() -> Result<(), SynError> {
 
     let config = ServerConfig::builder()
         .name("tls-echo-server")
-        .bind_addr("127.0.0.1:0".parse().unwrap())
         .tls(tls)
         .build();
     synclaire::SyncServer::from_listener(listener, config, TlsEchoHandler).run()

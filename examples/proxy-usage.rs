@@ -1,17 +1,23 @@
 // Proxy usage example: proxy server, proxy client, backend server.
 //
 // Modes:
-// - backend: Synclaire SyncServer echo backend on 127.0.0.1:3000
-// - proxy-server: proxy listener on 127.0.0.1:8080
-//                 (guards + dynamic credential rotation + IP routing table)
+// - backend: Synclaire SyncServer echo backend on a dynamic port
+// - demo: backend + proxy run in-process; backend's actual port passed to proxy routing table
+// - proxy-server <backend_port>: proxy listener on a dynamic port, routing to <backend_port>
+//                                (guards + dynamic credential rotation + IP routing table)
 // - proxy-server-async: tokio-based proxy with optional TLS offload
-// - proxy-client: client request through proxy
-// - proxy-client-bad-creds: demonstrates auth rejection
+// - proxy-client <proxy_port> [payload]: client request through proxy
+// - proxy-client-bad-creds <proxy_port>: demonstrates auth rejection
 //
-// Run order:
+// Run order (all-in-one):
+// 1) cargo run --example proxy-usage --features sync -- demo
+//
+// Run order (manual, three terminals):
 // 1) cargo run --example proxy-usage --features sync -- backend
-// 2) cargo run --example proxy-usage --features sync -- proxy-server
-// 3) cargo run --example proxy-usage --features sync -- proxy-client "hello via proxy"
+//    → prints "Backend (SyncServer) listening on port <N>"
+// 2) cargo run --example proxy-usage --features sync -- proxy-server <N>
+//    → proxy logs its actual bound port
+// 3) cargo run --example proxy-usage --features sync -- proxy-client <proxy_port> "hello via proxy"
 
 use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -27,18 +33,37 @@ use synclaire::SyncConnectionHandler;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let mode = args.get(1).map(|s| s.as_str()).unwrap_or("proxy-server");
+    let mode = args.get(1).map(|s| s.as_str()).unwrap_or("demo");
 
     match mode {
         "backend" => run_backend_server(),
-        "proxy-server" => run_proxy_server(),
+        "demo" => run_demo(),
+        "proxy-server" => {
+            let backend_port = args
+                .get(2)
+                .and_then(|s| s.parse::<u16>().ok())
+                .ok_or("proxy-server requires a <backend_port> argument: cargo run --example proxy-usage -- proxy-server <port>")?;
+            run_proxy_server(backend_port)
+        }
         "proxy-server-lb" => run_proxy_server_lb(),
         "proxy-server-async" => run_proxy_server_async(),
-        "proxy-client" => run_proxy_client(args.get(2).cloned()),
-        "proxy-client-bad-creds" => run_proxy_client_bad_credentials(),
+        "proxy-client" => {
+            let proxy_port = args
+                .get(2)
+                .and_then(|s| s.parse::<u16>().ok())
+                .ok_or("proxy-client requires a <proxy_port> argument: cargo run --example proxy-usage -- proxy-client <port> [payload]")?;
+            run_proxy_client(proxy_port, args.get(3).cloned())
+        }
+        "proxy-client-bad-creds" => {
+            let proxy_port = args
+                .get(2)
+                .and_then(|s| s.parse::<u16>().ok())
+                .ok_or("proxy-client-bad-creds requires a <proxy_port> argument: cargo run --example proxy-usage -- proxy-client-bad-creds <port>")?;
+            run_proxy_client_bad_credentials(proxy_port)
+        }
         _ => {
             eprintln!(
-                "Usage: {} [backend|proxy-server|proxy-server-lb|proxy-server-async|proxy-client|proxy-client-bad-creds] [payload]",
+                "Usage: {} [backend|demo|proxy-server <backend_port>|proxy-server-lb|proxy-server-async|proxy-client <proxy_port> [payload]|proxy-client-bad-creds <proxy_port>]",
                 args[0]
             );
             Ok(())
@@ -92,21 +117,110 @@ fn run_backend_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // ───────────────────────────────────────────────────────────────
+// Demo: backend + proxy run together in-process
+// ───────────────────────────────────────────────────────────────
+
+/// Runs backend and proxy in a single process.  The backend binds to :0 and its
+/// actual port is wired directly into the proxy routing table — no hardcoded port.
+fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
+    use std::thread;
+    use std::time::Duration;
+
+    // ─── Backend ─────────────────────────────────────────────────────────────
+    let backend_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let backend_port = backend_listener.local_addr()?.port();
+    println!("Backend (SyncServer) listening on port {}", backend_port);
+
+    let backend_config = ServerConfig::builder()
+        .name("proxy-backend-demo")
+        .build();
+    let (shutdown, signal) = SyncServer::<EchoHandler>::shutdown_channel();
+    let backend = SyncServer::from_listener(backend_listener, backend_config, EchoHandler);
+    thread::spawn(move || {
+        backend
+            .run_until_shutdown(signal)
+            .unwrap_or_else(|e| eprintln!("[demo] backend error: {}", e));
+    });
+
+    // Give the backend a moment to start accepting.
+    thread::sleep(Duration::from_millis(100));
+
+    // ─── Proxy ───────────────────────────────────────────────────────────────
+    // Route loopback traffic to the backend's actual port (resolved above).
+    let backend_addr: SocketAddr = format!("127.0.0.1:{}", backend_port).parse()?;
+    let backend_secondary: SocketAddr = "127.0.0.1:3001".parse()?; // illustrative fallback
+
+    let routing = Arc::new(RoutingTable::new(RouteAction::Reject));
+    routing.add_group(
+        "loopback",
+        IpGroup::new().add_prefix(IpPrefix::v4(127, 0, 0, 0, 8)),
+    );
+    routing.add_rule(
+        RoutingRule::new("loopback-to-backend", RouteAction::Forward(backend_addr))
+            .from_group("loopback"),
+    );
+    routing.add_rule(
+        RoutingRule::new("trusted-to-secondary", RouteAction::Forward(backend_secondary))
+            .from_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))),
+    );
+
+    let guards = GuardStackConfig {
+        rate_limiter: Some(RateLimiterConfig {
+            per_ip_capacity: 100,
+            per_ip_refill_per_second: 50,
+            global_capacity: 2000,
+            global_refill_per_second: 1000,
+            global_window: Duration::from_secs(10),
+            global_window_limit: 5000,
+            max_tracked_ips: 100_000,
+        }),
+        ..GuardStackConfig::default()
+    };
+
+    let metrics = Arc::new(MetricsCollector::new());
+    let auth_handle = ProxyAuthHandle::new(ProxyAuth::basic("admin", "password123"));
+
+    let listen_addr: SocketAddr = "127.0.0.1:0".parse()?;
+    let config = ProxyConfig::new(listen_addr, backend_addr)
+        .with_auth(ProxyAuth::basic("admin", "password123"))
+        .with_buffer_size(8192)
+        .with_guards(guards)
+        .with_routing(routing);
+
+    println!(
+        "Starting proxy server (routing loopback → backend port {}) …",
+        backend_port
+    );
+    println!("Proxy will log its actual bound port. Use 'proxy-client <proxy_port>' to test.");
+
+    let server = ProxyServer::new(config)
+        .with_auth_handle(auth_handle)
+        .with_metrics(metrics);
+    server.run()?; // blocks; proxy logs actual bound port internally
+
+    shutdown.shutdown();
+    Ok(())
+}
+
+// ───────────────────────────────────────────────────────────────
 // Proxy server with guards, routing table, dynamic auth + metrics
 // ───────────────────────────────────────────────────────────────
 
-/// Proxy server with guard integration, routing table, and dynamic credential update.
-fn run_proxy_server() -> Result<(), Box<dyn std::error::Error>> {
+/// Standalone proxy server.  `backend_port` must be supplied on the command line
+/// (obtained from the "backend" mode printout) so that the routing table can
+/// forward to the correct backend without hardcoding a port.
+fn run_proxy_server(backend_port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
     let listen_addr: SocketAddr = "127.0.0.1:0".parse()?;
-    let backend_primary: SocketAddr   = "127.0.0.1:3000".parse()?;  // main backend
-    let backend_secondary: SocketAddr = "127.0.0.1:3001".parse()?;  // fallback backend
+    let backend_primary: SocketAddr = format!("127.0.0.1:{}", backend_port).parse()?;
+    let backend_secondary: SocketAddr = "127.0.0.1:3001".parse()?; // illustrative fallback
 
     // ─── Routing table ───────────────────────────────────────────────────────
-    // Loopback (127.x.x.x) → primary backend 3000
-    // Everything else       → secondary backend 3001 (no rule falls through to default=Reject)
+    // Loopback (127.x.x.x) → primary backend (dynamic port supplied as arg)
+    // 192.168.1.100         → secondary backend 3001 (illustrative)
+    // Everything else       → Reject
     let routing = Arc::new(RoutingTable::new(RouteAction::Reject));
 
     routing.add_group(
@@ -122,7 +236,10 @@ fn run_proxy_server() -> Result<(), Box<dyn std::error::Error>> {
         RoutingRule::new("trusted-to-secondary", RouteAction::Forward(backend_secondary))
             .from_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))),
     );
-    println!("Routing table: loopback → :3000 | 192.168.1.100 → :3001 | else → Reject");
+    println!(
+        "Routing table: loopback → :{} | 192.168.1.100 → :3001 | else → Reject",
+        backend_port
+    );
 
     // ─── Guards ──────────────────────────────────────────────────────────────
     let guards = GuardStackConfig {
@@ -150,8 +267,8 @@ fn run_proxy_server() -> Result<(), Box<dyn std::error::Error>> {
         .with_guards(guards)
         .with_routing(routing);
 
-    println!("Proxy server listening on {}", listen_addr);
     println!("Current proxy credentials: admin / password123");
+    println!("Proxy will log its actual bound port on startup.");
 
     // Rotate credentials after 30 s (demonstrates live update).
     let auth_updater = auth_handle.clone();
@@ -312,7 +429,7 @@ fn run_proxy_server_async() -> Result<(), Box<dyn std::error::Error>> {
         println!("Async proxy TLS offload: disabled");
     }
 
-    println!("Async proxy server listening on {}", listen_addr);
+    println!("Async proxy server will log its actual bound port on startup.");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -333,8 +450,8 @@ fn run_proxy_server_async() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Proxy client that authenticates and sends payload through the proxy.
-fn run_proxy_client(payload: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let proxy_addr: SocketAddr = "127.0.0.1:8080".parse()?;
+fn run_proxy_client(proxy_port: u16, payload: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let proxy_addr: SocketAddr = format!("127.0.0.1:{}", proxy_port).parse()?;
     let backend_addr: SocketAddr = "127.0.0.1:3000".parse()?;
     let payload = payload.unwrap_or_else(|| "hello from proxy client".to_string());
 
@@ -348,8 +465,8 @@ fn run_proxy_client(payload: Option<String>) -> Result<(), Box<dyn std::error::E
 }
 
 /// Proxy client with intentionally bad credentials.
-fn run_proxy_client_bad_credentials() -> Result<(), Box<dyn std::error::Error>> {
-    let proxy_addr: SocketAddr = "127.0.0.1:8080".parse()?;
+fn run_proxy_client_bad_credentials(proxy_port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    let proxy_addr: SocketAddr = format!("127.0.0.1:{}", proxy_port).parse()?;
     let backend_addr: SocketAddr = "127.0.0.1:3000".parse()?;
 
     let client = ProxyClient::new(proxy_addr, backend_addr)
