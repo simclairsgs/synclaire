@@ -2,7 +2,7 @@
 name = "synclaire"
 version = "0.1.0"
 edition = "2021"
-authors = ["George Sam <george.sam@zohocorp.com>"]
+authors = ["George Sam <simclair.sgs@gmail.com>"]
 license = "MIT"
 description = "Transport-layer TCP/TLS library with guards, routing, and proxy primitives"
 readme = "README.md"
