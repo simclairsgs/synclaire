@@ -8,7 +8,7 @@
 [![docs.rs](https://docs.rs/synclaire/badge.svg)](https://docs.rs/synclaire)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Docs](https://docs.rs/synclaire) | [Crate](https://crates.io/crates/synclaire) | [Examples](examples/)
+[Docs](https://docs.rs/synclaire) | [Crate](https://crates.io/crates/synclaire) | [GitHub](https://github.com/simclairsgs/synclaire) | [Examples](examples/)
 
 </div>
 
