@@ -12,7 +12,7 @@ pub mod routing;
 pub mod server;
 pub mod tls;
 pub mod connection_filter;
-pub mod cleanup;
+pub(crate) mod cleanup;
 
 pub use config::{AcceptMode, ClientConfig, GuardStackConfig, PemSource, ServerConfig, TlsConfig};
 pub use error::SynError;

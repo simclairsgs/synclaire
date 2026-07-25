@@ -3,6 +3,7 @@
 // Allows servers to implement custom logic to accept or reject connections
 // based on metadata like peer address, TLS status, etc.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::handler::Connection;
@@ -38,13 +39,13 @@ pub type BoxedConnectionFilter = Arc<dyn ConnectionFilter>;
 
 /// Simple IP whitelist filter
 pub struct IpWhitelistFilter {
-    allowed_ips: Vec<std::net::IpAddr>,
+    allowed_ips: HashSet<std::net::IpAddr>,
 }
 
 impl IpWhitelistFilter {
     /// Create a new IP whitelist filter
-    pub fn new(allowed_ips: Vec<std::net::IpAddr>) -> Self {
-        Self { allowed_ips }
+    pub fn new(allowed_ips: impl IntoIterator<Item = std::net::IpAddr>) -> Self {
+        Self { allowed_ips: allowed_ips.into_iter().collect() }
     }
 }
 
@@ -53,27 +54,27 @@ impl ConnectionFilter for IpWhitelistFilter {
         if self.allowed_ips.contains(&conn.metadata().peer_addr.ip()) {
             Ok(())
         } else {
-               Err(SynError::runtime("Connection from IP not in whitelist"))
+            Err(SynError::runtime("Connection from IP not in whitelist"))
         }
     }
 }
 
 /// Simple IP blocklist filter
 pub struct IpBlocklistFilter {
-    blocked_ips: Vec<std::net::IpAddr>,
+    blocked_ips: HashSet<std::net::IpAddr>,
 }
 
 impl IpBlocklistFilter {
     /// Create a new IP blocklist filter
-    pub fn new(blocked_ips: Vec<std::net::IpAddr>) -> Self {
-        Self { blocked_ips }
+    pub fn new(blocked_ips: impl IntoIterator<Item = std::net::IpAddr>) -> Self {
+        Self { blocked_ips: blocked_ips.into_iter().collect() }
     }
 }
 
 impl ConnectionFilter for IpBlocklistFilter {
     fn filter(&self, conn: &Connection) -> Result<(), SynError> {
         if self.blocked_ips.contains(&conn.metadata().peer_addr.ip()) {
-               Err(SynError::runtime("Connection from blocked IP"))
+            Err(SynError::runtime("Connection from blocked IP"))
         } else {
             Ok(())
         }

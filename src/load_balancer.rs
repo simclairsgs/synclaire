@@ -215,6 +215,7 @@ impl BackendPool {
     /// Select a backend for the given peer address.
     ///
     /// Returns `None` if the pool is empty.
+    #[must_use]
     pub fn select(&self, peer: SocketAddr) -> Option<SocketAddr> {
         let inner = self.inner.read();
         if inner.backends.is_empty() {

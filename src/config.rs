@@ -43,6 +43,7 @@ impl PemSource {
         }
     }
 
+    #[deprecated(since = "0.1.1", note = "Use `PemSource::file` instead")]
     pub fn from_file(path: impl Into<PathBuf>) -> Self {
         Self::file(path)
     }
@@ -142,6 +143,12 @@ impl TlsConfigBuilder {
         self
     }
 
+    /// Replace the entire ALPN protocol list (clears the default "synclaire/1" entry).
+    pub fn alpn_protocols(mut self, protocols: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.config.alpn_protocols = protocols.into_iter().map(|p| p.into()).collect();
+        self
+    }
+
     pub fn verify_peer(mut self, verify_peer: bool) -> Self {
         self.config.verify_peer = verify_peer;
         self
@@ -157,6 +164,7 @@ impl TlsConfigBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> TlsConfig {
         self.config
     }
@@ -274,6 +282,7 @@ impl ServerConfigBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> ServerConfig {
         self.config
     }
@@ -337,6 +346,7 @@ impl ClientConfigBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> ClientConfig {
         self.config
     }

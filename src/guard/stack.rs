@@ -182,6 +182,7 @@ impl GuardStackBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> GuardStack {
         GuardStack {
             inner: Arc::new(GuardStackInner {
