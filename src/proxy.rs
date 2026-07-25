@@ -563,7 +563,13 @@ impl AsyncProxyServer {
         );
 
         loop {
-            let (stream, peer_addr) = listener.accept().await?;
+            let (stream, peer_addr) = match listener.accept().await {
+                Ok(conn) => conn,
+                Err(e) => {
+                    log::warn!("async proxy accept error: {}", e);
+                    continue;
+                }
+            };
             let local_addr = stream.local_addr().ok();
             let tls_enabled = self.config.tls_offload.as_ref().is_some_and(|tls| tls.enabled);
             let context = GuardContext::new(peer_addr, local_addr, tls_enabled);

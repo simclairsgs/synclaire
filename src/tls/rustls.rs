@@ -204,10 +204,12 @@ fn build_root_store_for_client(tls: &TlsConfig) -> Result<Arc<RootCertStore>, Sy
     Ok(Arc::new(RootCertStore::empty()))
 }
 
+#[cfg(feature = "async")]
 pub fn async_server_acceptor(tls: &TlsConfig) -> Result<tokio_rustls::TlsAcceptor, SynError> {
     Ok(tokio_rustls::TlsAcceptor::from(build_server_config(tls)?))
 }
 
+#[cfg(feature = "async")]
 pub fn async_client_connector(tls: &TlsConfig) -> Result<tokio_rustls::TlsConnector, SynError> {
     Ok(tokio_rustls::TlsConnector::from(build_client_config(tls)?))
 }

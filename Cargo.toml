@@ -6,6 +6,7 @@ license = "MIT"
 description = "Transport-layer TCP/TLS library with guards, routing, and proxy primitives"
 readme = "README.md"
 documentation = "https://docs.rs/synclaire"
+repository = "https://github.com/georgesam/synclaire"
 keywords = ["tcp", "tls", "proxy", "client", "server"]
 categories = ["network-programming", "asynchronous", "cryptography"]
 

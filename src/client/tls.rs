@@ -1,6 +1,7 @@
+#[cfg(feature = "rustls-backend")]
 use crate::{config::TlsConfig, error::SynError, tls as syn_tls};
 
-#[cfg(feature = "async")]
+#[cfg(all(feature = "async", feature = "rustls-backend"))]
 pub async fn connect_async(
     stream: tokio::net::TcpStream,
     config: &TlsConfig,
@@ -11,7 +12,7 @@ pub async fn connect_async(
     Ok(tls_stream)
 }
 
-#[cfg(feature = "sync")]
+#[cfg(all(feature = "sync", feature = "rustls-backend"))]
 pub fn connect_sync(
     stream: std::net::TcpStream,
     config: &TlsConfig,
