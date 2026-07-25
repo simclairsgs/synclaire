@@ -1,0 +1,34 @@
+[package]
+name = "synclaire"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Transport-layer TCP/TLS library with guards, routing, and proxy primitives"
+readme = "README.md"
+documentation = "https://docs.rs/synclaire"
+keywords = ["tcp", "tls", "proxy", "client", "server"]
+categories = ["network-programming", "asynchronous", "cryptography"]
+
+[features]
+default = ["async", "rustls-backend"]
+async = ["dep:tokio", "dep:tokio-rustls", "dep:futures"]
+sync = ["dep:futures"]
+rustls-backend = ["dep:rustls"]
+aws-lc-backend = ["dep:aws-lc-rs"]
+full = ["async", "sync", "rustls-backend", "aws-lc-backend"]
+
+[dependencies]
+futures = { version = "0.3", optional = true }
+log = "0.4"
+parking_lot = "0.12"
+rustls = { version = "0.23", optional = true }
+rustls-pemfile = "2.2"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "macros", "time", "sync", "fs"], optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+aws-lc-rs = { version = "1", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+env_logger = "0.10"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
