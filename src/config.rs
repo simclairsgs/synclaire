@@ -43,7 +43,7 @@ impl PemSource {
         }
     }
 
-    #[deprecated(since = "0.1.1", note = "Use `PemSource::file` instead")]
+    #[deprecated(since = "0.1.0", note = "Use PemSource::file instead")]
     pub fn from_file(path: impl Into<PathBuf>) -> Self {
         Self::file(path)
     }
