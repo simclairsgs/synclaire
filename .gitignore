@@ -1,4 +1,9 @@
 target/
+Cargo.lock
+
+# Internal tooling
+.superpowers/
+docs/superpowers/
 
 # Editor settings
 .vscode/
@@ -6,4 +11,3 @@ target/
 
 # macOS
 .DS_Store
-Cargo.lock
