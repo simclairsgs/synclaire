@@ -966,4 +966,42 @@ mod base64 {
 
         Ok(output)
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        // RFC 4648 §10 test vectors
+        #[test]
+        fn encode_rfc4648_vectors() {
+            assert_eq!(encode(""), "");
+            assert_eq!(encode("f"), "Zg==");
+            assert_eq!(encode("fo"), "Zm8=");
+            assert_eq!(encode("foo"), "Zm9v");
+            assert_eq!(encode("foob"), "Zm9vYg==");
+            assert_eq!(encode("fooba"), "Zm9vYmE=");
+            assert_eq!(encode("foobar"), "Zm9vYmFy");
+        }
+
+        #[test]
+        fn decode_rfc4648_vectors() {
+            assert_eq!(decode("").unwrap(), b"");
+            assert_eq!(decode("Zg==").unwrap(), b"f");
+            assert_eq!(decode("Zm8=").unwrap(), b"fo");
+            assert_eq!(decode("Zm9v").unwrap(), b"foo");
+            assert_eq!(decode("Zm9vYg==").unwrap(), b"foob");
+            assert_eq!(decode("Zm9vYmE=").unwrap(), b"fooba");
+            assert_eq!(decode("Zm9vYmFy").unwrap(), b"foobar");
+        }
+
+        #[test]
+        fn roundtrip() {
+            let cases = ["", "a", "ab", "abc", "abcd", "hello world", "user:pass"];
+            for case in &cases {
+                let encoded = encode(case);
+                let decoded = decode(&encoded).unwrap();
+                assert_eq!(decoded, case.as_bytes(), "roundtrip failed for {:?}", case);
+            }
+        }
+    }
 }
