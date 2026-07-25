@@ -43,7 +43,7 @@ pub struct ServerMetrics {
     pub active: u64,
     pub failures: u64,
     pub avg_latency_ms: f64,
-    pub connection_count: u64, // For latency calculation
+    pub latency_sample_count: u64, // For latency calculation
 }
 
 /// Per-IP metrics
@@ -272,7 +272,10 @@ impl MetricsCollector {
 
     /// Record a connection closure
     pub fn record_connection_close(&self, server_name: Option<&str>, peer_ip: IpAddr) {
-        self.active.fetch_sub(1, Ordering::SeqCst);
+        // Saturate at 0 to prevent wrapping on double-close.
+        self.active.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            Some(v.saturating_sub(1))
+        }).ok();
 
         if let Some(name) = server_name {
             let mut per_server = self.per_server.lock();
@@ -355,7 +358,7 @@ impl MetricsCollector {
                         active: m.active,
                         failures: m.failures,
                         avg_latency_ms,
-                        connection_count: m.latency_count,
+                        latency_sample_count: m.latency_count,
                     },
                 )
             })
@@ -569,5 +572,17 @@ mod tests {
         collector.trigger_callbacks();
 
         assert!(called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_double_close_does_not_wrap_active_counter() {
+        let collector = MetricsCollector::new();
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        collector.record_tcp_connection(Some("s"), ip);
+        collector.record_connection_close(Some("s"), ip);
+        // Double close — should not wrap to u64::MAX.
+        collector.record_connection_close(Some("s"), ip);
+        let snap = collector.snapshot();
+        assert_eq!(snap.active_connections, 0, "must saturate at 0, not wrap");
     }
 }
