@@ -15,7 +15,7 @@ use crate::SynError;
 pub use ip_ban::{IpBan, IpBanConfig};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig};
 pub use slow_loris::{SlowLoris, SlowLorisConfig};
-pub use stack::{GuardSession, GuardStack, GuardStackBuilder};
+pub use stack::{Allowlist, GuardSession, GuardStack, GuardStackBuilder};
 pub use syn_guard::{SynGuard, SynGuardConfig};
 pub use throttle::{Throttle, ThrottleConfig};
 

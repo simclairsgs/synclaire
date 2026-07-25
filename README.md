@@ -1,12 +1,39 @@
+<div align="center">
+
 # synclaire
+
+**TCP/TLS transport library for Rust — guards, routing, load balancing, and proxy built in.**
 
 [![Crates.io](https://img.shields.io/crates/v/synclaire.svg)](https://crates.io/crates/synclaire)
 [![docs.rs](https://docs.rs/synclaire/badge.svg)](https://docs.rs/synclaire)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Transport-layer TCP/TLS library for Rust with built-in connection guards, routing, and proxy primitives.
+[Docs](https://docs.rs/synclaire) | [Crate](https://crates.io/crates/synclaire) | [Examples](examples/)
 
-synclaire sits between raw sockets and application protocols. It handles TCP/TLS streams, connection lifecycle, and transport-level defense so your application layer can focus on protocol logic.
+</div>
+
+synclaire sits between raw sockets and application protocols. You write a handler, synclaire runs the accept loop, manages TLS, enforces connection guards, and routes traffic — so you ship protocol logic, not plumbing. Includes both Client and Server APIs.
+
+```
+  your app
+    |
+ synclaire --- guards ─── TLS ─── routing ─── proxy --->  handler
+    |
+  TCP/TLS
+```
+
+### What's included
+
+| | |
+|---|---|
+| **Async + Sync servers & clients** | Tokio-based async or threaded sync — same API shape |
+| **TLS, mTLS, mixed-mode** | rustls with ring or aws-lc-rs (FIPS); auto-detect TLS vs plain TCP per connection |
+| **Guard stack** | Rate limiter, SYN flood, slow loris, throttle, IP ban — layered, rollback-safe |
+| **Routing & load balancing** | IP-based rules, round-robin and consistent-hash pools, runtime-updatable |
+| **TCP proxy** | Auth, TLS offload, credential rotation, pluggable routing |
+| **Metrics** | Per-server, per-IP counters with real-time callbacks |
+
+---
 
 ## Quick start
 
@@ -140,6 +167,18 @@ let guards = GuardStackConfig {
 | **IpBan** | Runtime-mutable IP blocklist with `ban()`/`unban()` API |
 
 Guards implement a lifecycle (`on_reserve` / `on_established` / `on_payload` / `on_activity` / `on_close`) and are automatically rolled back if a later guard in the stack rejects. All per-IP tracking maps are bounded to prevent memory exhaustion under IP rotation attacks.
+
+**Allowlist** — trusted IPs skip the entire guard chain. Runtime-mutable via `allow()`/`remove()`:
+
+```rust
+let guards = GuardStack::builder()
+    .push(RateLimiter::new(limiter_config))
+    .build();
+
+// At any time, from any thread:
+guards.allowlist().allow("10.0.0.1".parse().unwrap());
+guards.allowlist().remove(&"10.0.0.1".parse().unwrap());
+```
 
 ## TLS
 

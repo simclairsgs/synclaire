@@ -16,7 +16,7 @@ pub(crate) mod cleanup;
 
 pub use config::{AcceptMode, ClientConfig, GuardStackConfig, PemSource, ServerConfig, TlsConfig};
 pub use error::SynError;
-pub use guard::{IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, SlowLorisConfig, SynGuardConfig, ThrottleConfig};
+pub use guard::{Allowlist, IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, SlowLorisConfig, SynGuardConfig, ThrottleConfig};
 pub use load_balancer::{Backend, BackendPool, LoadBalancerStrategy, StickyKey};
 pub use handler::{Connection, ConnectionMetadata, ConnectionStream};
 #[cfg(feature = "async")]

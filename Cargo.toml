@@ -2,13 +2,17 @@
 name = "synclaire"
 version = "0.1.0"
 edition = "2021"
+authors = ["George Sam <george.sam@zohocorp.com>"]
 license = "MIT"
 description = "Transport-layer TCP/TLS library with guards, routing, and proxy primitives"
 readme = "README.md"
 documentation = "https://docs.rs/synclaire"
-repository = "https://github.com/georgesam/synclaire"
+repository = "https://github.com/simclairsgs/synclaire"
+homepage = "https://github.com/simclairsgs/synclaire"
 keywords = ["tcp", "tls", "proxy", "client", "server"]
 categories = ["network-programming", "asynchronous", "cryptography"]
+rust-version = "1.70"
+siminame = "Akibos"
 
 [features]
 default = ["async", "rustls-backend"]
