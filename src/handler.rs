@@ -12,11 +12,14 @@ use std::io;
 #[cfg(feature = "sync")]
 use std::io::{Read, Write};
 
+#[cfg(any(feature = "async", feature = "sync"))]
 use futures::future::BoxFuture;
 
 use crate::{guard::GuardSession, SynError};
 
+#[cfg(any(feature = "async", feature = "sync"))]
 pub type HandlerResult = Result<(), SynError>;
+#[cfg(any(feature = "async", feature = "sync"))]
 pub type HandlerFuture<'a> = BoxFuture<'a, HandlerResult>;
 
 #[derive(Clone, Debug)]
@@ -201,11 +204,14 @@ pub enum ConnectionStream {
 
 impl ConnectionStream {
     pub fn is_tls(&self) -> bool {
-        match self {
+        // Deref so that the match is on `ConnectionStream` (not `&ConnectionStream`).
+        // When neither feature is enabled the enum is uninhabited, and matching on
+        // an uninhabited value with no arms is valid Rust — the block is unreachable.
+        match *self {
             #[cfg(feature = "async")]
-            ConnectionStream::Async(s) => s.is_tls(),
+            ConnectionStream::Async(ref s) => s.is_tls(),
             #[cfg(feature = "sync")]
-            ConnectionStream::Sync(s) => s.is_tls(),
+            ConnectionStream::Sync(ref s) => s.is_tls(),
         }
     }
 
@@ -350,16 +356,16 @@ impl Connection {
         self.stream.take().expect("stream was already taken")
     }
 
-    /// Shortcut to the concrete async stream.
+    /// Returns the async stream, or `None` if this is a sync connection.
     #[cfg(feature = "async")]
-    pub fn async_stream(&self) -> &AsyncStream {
-        self.stream().as_async().expect("expected an async connection")
+    pub fn async_stream(&self) -> Option<&AsyncStream> {
+        self.stream().as_async()
     }
 
-    /// Mutable shortcut to the concrete async stream.
+    /// Returns the mutable async stream, or `None` if this is a sync connection.
     #[cfg(feature = "async")]
-    pub fn async_stream_mut(&mut self) -> &mut AsyncStream {
-        self.stream_mut().as_async_mut().expect("expected an async connection")
+    pub fn async_stream_mut(&mut self) -> Option<&mut AsyncStream> {
+        self.stream_mut().as_async_mut()
     }
 
     pub fn peer_addr(&self) -> SocketAddr {
@@ -440,10 +446,12 @@ impl Drop for Connection {
     }
 }
 
+#[cfg(any(feature = "async", feature = "sync"))]
 pub trait ConnectionHandler: Send + Sync + 'static {
     fn handle<'a>(&'a self, connection: Connection) -> HandlerFuture<'a>;
 }
 
+#[cfg(any(feature = "async", feature = "sync"))]
 impl<F, Fut> ConnectionHandler for F
 where
     F: Fn(Connection) -> Fut + Send + Sync + 'static,
@@ -472,8 +480,8 @@ mod tests {
         let metadata = ConnectionMetadata::new(peer_addr, None, false);
         let connection = Connection::from_async_tcp(metadata, server_stream);
         assert!(!connection.is_tls());
-        assert!(connection.async_stream().as_tcp().is_some());
-        assert!(connection.async_stream().as_server_tls().is_none());
+        assert!(connection.async_stream().expect("async stream").as_tcp().is_some());
+        assert!(connection.async_stream().expect("async stream").as_server_tls().is_none());
         match connection.into_stream().into_async().expect("async stream") {
             AsyncStream::Tcp(_) => {}
             _ => panic!("expected TCP stream"),

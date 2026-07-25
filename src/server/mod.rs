@@ -1,3 +1,4 @@
+#[cfg(feature = "async")]
 pub mod async_server;
 #[cfg(feature = "sync")]
 pub mod sync_server;

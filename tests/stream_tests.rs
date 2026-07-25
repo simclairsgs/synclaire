@@ -22,9 +22,9 @@ async fn async_stream_tcp_variant_is_not_tls() {
     let conn = Connection::from_async_tcp(make_metadata(&peer.to_string()), stream);
 
     assert!(!conn.is_tls(), "TCP connection should not report is_tls");
-    assert!(conn.async_stream().as_tcp().is_some(), "should expose TcpStream");
-    assert!(conn.async_stream().as_server_tls().is_none());
-    assert!(conn.async_stream().as_client_tls().is_none());
+    assert!(conn.async_stream().expect("async stream").as_tcp().is_some(), "should expose TcpStream");
+    assert!(conn.async_stream().expect("async stream").as_server_tls().is_none());
+    assert!(conn.async_stream().expect("async stream").as_client_tls().is_none());
 }
 
 #[cfg(feature = "async")]
@@ -38,7 +38,7 @@ async fn async_stream_tcp_ref_gives_real_socket() {
     let conn = Connection::from_async_tcp(make_metadata(&peer.to_string()), stream);
 
     // tcp() on AsyncStream returns the underlying socket regardless of TLS wrapping.
-    let tcp_ref = conn.async_stream().tcp();
+    let tcp_ref = conn.async_stream().expect("async stream").tcp();
     assert!(tcp_ref.local_addr().is_ok(), "socket should have a local addr");
 }
 

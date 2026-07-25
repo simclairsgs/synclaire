@@ -26,7 +26,7 @@ impl ConnectionHandler for TlsEchoHandler {
             // is_tls() works regardless of AcceptMode — it reflects what actually happened.
             if connection.is_tls() {
                 // Get the concrete server-side TLS stream — includes the rustls session.
-                if let Some(tls_stream) = connection.async_stream().as_server_tls() {
+                if let Some(tls_stream) = connection.async_stream().expect("async connection").as_server_tls() {
                     let (_, session) = tls_stream.get_ref();
                     let protocol = session.alpn_protocol().map(String::from_utf8_lossy);
                     log::info!("TLS handshake complete peer={} alpn={:?}", peer, protocol);

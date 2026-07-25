@@ -21,6 +21,7 @@ pub fn accept_sync(
     Ok(tls_stream)
 }
 
+#[cfg(feature = "rustls-backend")]
 pub fn backend_label(config: &TlsConfig) -> &'static str {
     if config.prefer_aws_lc {
         syn_tls::aws_lc::backend_name()

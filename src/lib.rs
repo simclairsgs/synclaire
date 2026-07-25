@@ -18,7 +18,11 @@ pub use config::{AcceptMode, ClientConfig, GuardStackConfig, PemSource, ServerCo
 pub use error::SynError;
 pub use guard::{IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, SlowLorisConfig, SynGuardConfig, ThrottleConfig};
 pub use load_balancer::{Backend, BackendPool, LoadBalancerStrategy, StickyKey};
-pub use handler::{AsyncStream, Connection, ConnectionHandler, ConnectionMetadata, ConnectionStream};
+pub use handler::{Connection, ConnectionMetadata, ConnectionStream};
+#[cfg(feature = "async")]
+pub use handler::AsyncStream;
+#[cfg(any(feature = "async", feature = "sync"))]
+pub use handler::ConnectionHandler;
 pub use metrics::{ConnectionMetrics, LoggingMetricsCallback, MetricsCallback, MetricsCollector};
 pub use proxy::{ProxyAuth, ProxyAuthHandle, ProxyClient, ProxyConfig, ProxyServer, TcpProxy};
 pub use routing::{IpGroup, IpPrefix, RouteAction, RoutingRule, RoutingTable};

@@ -14,7 +14,7 @@ impl ConnectionHandler for EchoHandler {
             log::info!("new connection peer={} tls={}", peer, tls);
 
             // Pattern-match to get the raw socket if you need it.
-            match connection.async_stream() {
+            match connection.async_stream().expect("async connection") {
                 AsyncStream::Tcp(tcp) => {
                     // Direct access to the TcpStream — set options, inspect peer, etc.
                     let _ = tcp.peer_addr();

@@ -16,7 +16,7 @@ async fn main() -> Result<(), SynError> {
     log::info!("connected tls={} peer={}", connection.is_tls(), connection.peer_addr());
 
     // Pattern-match to reach the concrete socket.
-    match connection.async_stream() {
+    match connection.async_stream().expect("async connection") {
         AsyncStream::Tcp(tcp) => log::info!("plain TCP socket local={:?}", tcp.local_addr().ok()),
         AsyncStream::ClientTls(tls_stream) => {
             let (_, session) = tls_stream.get_ref();
