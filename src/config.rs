@@ -66,7 +66,6 @@ pub struct TlsConfig {
     /// Set to `false` to use only explicitly provided `trust_anchors` (or an empty root store).
     pub use_system_roots: bool,
     pub require_client_auth: bool,
-    pub prefer_aws_lc: bool,
 }
 
 impl Default for TlsConfig {
@@ -83,7 +82,6 @@ impl Default for TlsConfig {
             verify_peer: true,
             use_system_roots: true,
             require_client_auth: false,
-            prefer_aws_lc: false,
         }
     }
 }
@@ -156,11 +154,6 @@ impl TlsConfigBuilder {
 
     pub fn require_client_auth(mut self, require_client_auth: bool) -> Self {
         self.config.require_client_auth = require_client_auth;
-        self
-    }
-
-    pub fn prefer_aws_lc(mut self, prefer_aws_lc: bool) -> Self {
-        self.config.prefer_aws_lc = prefer_aws_lc;
         self
     }
 

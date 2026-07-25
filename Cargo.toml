@@ -14,8 +14,7 @@ default = ["async", "rustls-backend"]
 async = ["dep:tokio", "dep:tokio-rustls", "dep:futures"]
 sync = ["dep:futures"]
 rustls-backend = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pemfile"]
-aws-lc-backend = ["dep:aws-lc-rs"]
-full = ["async", "sync", "rustls-backend", "aws-lc-backend"]
+full = ["async", "sync", "rustls-backend"]
 
 [dependencies]
 futures = { version = "0.3", optional = true }
@@ -27,7 +26,6 @@ rustls-native-certs = { version = "0.8", optional = true }
 thiserror = "2"
 tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "macros", "time", "sync", "fs"], optional = true }
 tokio-rustls = { version = "0.26", optional = true }
-aws-lc-rs = { version = "1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,10 +1,7 @@
-#[cfg(feature = "aws-lc-backend")]
-use aws_lc_rs as _;
+// AWS LC backend — not yet implemented.
+// This module is reserved for a future FIPS-compliant backend using aws-lc-rs.
+// Currently, all TLS operations use the rustls-backend (ring provider).
 
 pub fn backend_name() -> &'static str {
-    "aws-lc-rs"
-}
-
-pub fn describe_backend() -> &'static str {
-    "aws-lc-rs backend is available behind the aws-lc-backend feature"
+    "aws-lc-rs (not yet implemented)"
 }

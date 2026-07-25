@@ -20,12 +20,3 @@ pub fn accept_sync(
     let tls_stream = rustls::StreamOwned::new(connection, stream);
     Ok(tls_stream)
 }
-
-#[cfg(feature = "rustls-backend")]
-pub fn backend_label(config: &TlsConfig) -> &'static str {
-    if config.prefer_aws_lc {
-        syn_tls::aws_lc::backend_name()
-    } else {
-        syn_tls::rustls::backend_name()
-    }
-}
