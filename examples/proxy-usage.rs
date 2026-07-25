@@ -121,6 +121,7 @@ fn run_proxy_server() -> Result<(), Box<dyn std::error::Error>> {
             global_refill_per_second: 1000,
             global_window: Duration::from_secs(10),
             global_window_limit: 5000,
+            max_tracked_ips: 100_000,
         }),
         ..GuardStackConfig::default()
     };
@@ -253,6 +254,7 @@ fn run_proxy_server_async() -> Result<(), Box<dyn std::error::Error>> {
             global_refill_per_second: 1000,
             global_window: Duration::from_secs(10),
             global_window_limit: 5000,
+            max_tracked_ips: 100_000,
         }),
         ..GuardStackConfig::default()
     };

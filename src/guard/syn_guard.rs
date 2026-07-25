@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     net::{IpAddr, SocketAddr},
     time::{Duration, Instant},
 };
@@ -14,6 +14,8 @@ pub struct SynGuardConfig {
     pub max_half_open_global: usize,
     pub backlog_limit: usize,
     pub syn_timeout: Duration,
+    /// Maximum number of IPs tracked in the per-IP half-open map.
+    pub max_tracked_ips: usize,
 }
 
 impl Default for SynGuardConfig {
@@ -23,6 +25,7 @@ impl Default for SynGuardConfig {
             max_half_open_global: 512,
             backlog_limit: 1_024,
             syn_timeout: Duration::from_secs(5),
+            max_tracked_ips: 100_000,
         }
     }
 }
@@ -31,6 +34,7 @@ impl Default for SynGuardConfig {
 struct HalfOpenState {
     total: usize,
     per_ip: HashMap<IpAddr, usize>,
+    ip_order: VecDeque<IpAddr>,
     started_at: HashMap<IpAddr, Instant>,
     /// Connections that have passed on_established — used to avoid double-decrementing.
     established: HashSet<SocketAddr>,
@@ -51,7 +55,6 @@ impl SynGuard {
 
     fn reserve(&self, ip: IpAddr) -> Result<(), SynError> {
         let mut state = self.state.lock();
-        let _ = self.config.backlog_limit;
 
         let next_total = state.total + 1;
         let next_ip = state.per_ip.get(&ip).copied().unwrap_or(0) + 1;
@@ -64,8 +67,22 @@ impl SynGuard {
             return Err(SynError::throttled("half-open per-ip", self.config.max_half_open_per_ip));
         }
 
+        // Evict oldest IP entry if we are at the tracking cap (new IP only).
+        let is_new_ip = !state.per_ip.contains_key(&ip);
+        if is_new_ip && state.per_ip.len() >= self.config.max_tracked_ips {
+            if let Some(old_ip) = state.ip_order.pop_front() {
+                if let Some(old_count) = state.per_ip.remove(&old_ip) {
+                    state.total = state.total.saturating_sub(old_count);
+                }
+                state.started_at.remove(&old_ip);
+            }
+        }
+
         state.total = next_total;
-        state.per_ip.insert(ip, next_ip);
+        if is_new_ip {
+            state.ip_order.push_back(ip);
+        }
+        *state.per_ip.entry(ip).or_insert(0) = next_ip;
         state.started_at.entry(ip).or_insert_with(Instant::now);
 
         Ok(())

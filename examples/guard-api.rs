@@ -87,6 +87,7 @@ fn demo_rate_limiter() {
         global_refill_per_second: 100,    // 100 tokens/sec globally
         global_window: std::time::Duration::from_secs(10),
         global_window_limit: 2_000,       // Max 2000 connections per 10-second window
+        max_tracked_ips: 100_000,
     };
 
     let _rate_limiter = RateLimiter::new(config.clone());
@@ -128,6 +129,7 @@ fn demo_syn_guard() {
         max_half_open_global: 256,     // Max 256 half-open globally
         backlog_limit: 1_024,          // OS-level backlog
         syn_timeout: std::time::Duration::from_secs(5),
+        max_tracked_ips: 100_000,
     };
 
     let _syn_guard = SynGuard::new(config.clone());
@@ -147,6 +149,7 @@ fn demo_slow_loris() {
     let config = SlowLorisConfig {
         idle_timeout: std::time::Duration::from_secs(15),
         grace_period: std::time::Duration::from_secs(3),
+        max_tracked_connections: 100_000,
     };
 
     let _slow_loris = SlowLoris::new(config.clone());

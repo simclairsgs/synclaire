@@ -16,6 +16,9 @@ pub struct RateLimiterConfig {
     pub global_refill_per_second: u32,
     pub global_window: Duration,
     pub global_window_limit: usize,
+    /// Maximum number of distinct IPs tracked in the per-IP bucket map.
+    /// When exceeded, the oldest-seen IP entry is evicted (LRU-by-insertion).
+    pub max_tracked_ips: usize,
 }
 
 impl Default for RateLimiterConfig {
@@ -27,6 +30,7 @@ impl Default for RateLimiterConfig {
             global_refill_per_second: 200,
             global_window: Duration::from_secs(10),
             global_window_limit: 5_000,
+            max_tracked_ips: 100_000,
         }
     }
 }
@@ -64,18 +68,49 @@ impl TokenBucket {
     }
 }
 
+struct BoundedIpMap {
+    map: HashMap<IpAddr, TokenBucket>,
+    order: VecDeque<IpAddr>,
+    max: usize,
+}
+
+impl BoundedIpMap {
+    fn new(max: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+            max: max.max(1),
+        }
+    }
+
+    fn get_or_insert(&mut self, ip: IpAddr, capacity: u32, refill: u32) -> &mut TokenBucket {
+        if !self.map.contains_key(&ip) {
+            // Evict oldest entry when at capacity.
+            if self.map.len() >= self.max {
+                if let Some(old) = self.order.pop_front() {
+                    self.map.remove(&old);
+                }
+            }
+            self.map.insert(ip, TokenBucket::new(capacity, refill));
+            self.order.push_back(ip);
+        }
+        self.map.get_mut(&ip).expect("just inserted")
+    }
+}
+
 pub struct RateLimiter {
     config: RateLimiterConfig,
-    per_ip: Mutex<HashMap<IpAddr, TokenBucket>>,
+    per_ip: Mutex<BoundedIpMap>,
     global_bucket: Mutex<TokenBucket>,
     global_window: Mutex<VecDeque<Instant>>,
 }
 
 impl RateLimiter {
     pub fn new(config: RateLimiterConfig) -> Self {
+        let max = config.max_tracked_ips;
         Self {
             global_bucket: Mutex::new(TokenBucket::new(config.global_capacity, config.global_refill_per_second)),
-            per_ip: Mutex::new(HashMap::new()),
+            per_ip: Mutex::new(BoundedIpMap::new(max)),
             global_window: Mutex::new(VecDeque::new()),
             config,
         }
@@ -111,9 +146,7 @@ impl RateLimiter {
         }
 
         let mut per_ip = self.per_ip.lock();
-        let entry = per_ip
-            .entry(ip)
-            .or_insert_with(|| TokenBucket::new(self.config.per_ip_capacity, self.config.per_ip_refill_per_second));
+        let entry = per_ip.get_or_insert(ip, self.config.per_ip_capacity, self.config.per_ip_refill_per_second);
 
         if entry.allow() {
             Ok(())
@@ -130,5 +163,35 @@ impl Guard for RateLimiter {
 
     fn on_reserve(&self, context: &GuardContext) -> Result<(), SynError> {
         self.allow(context.peer_ip)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::guard::{Guard, GuardContext};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    fn ctx(ip: IpAddr) -> GuardContext {
+        let addr = SocketAddr::new(ip, 1234);
+        GuardContext::new(addr, None, false)
+    }
+
+    #[test]
+    fn per_ip_map_does_not_grow_past_limit() {
+        let config = RateLimiterConfig {
+            max_tracked_ips: 10,
+            ..Default::default()
+        };
+        let limiter = RateLimiter::new(config);
+
+        for i in 0u32..20 {
+            let ip = IpAddr::V4(Ipv4Addr::from(i + 1));
+            // Allow may fail due to global limits but that's fine — we just want entries created.
+            let _ = limiter.allow(ip);
+        }
+
+        let map_len = limiter.per_ip.lock().map.len();
+        assert!(map_len <= 10, "map length {} exceeds cap of 10", map_len);
     }
 }

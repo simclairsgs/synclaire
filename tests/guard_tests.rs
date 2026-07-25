@@ -25,6 +25,7 @@ fn rate_limiter_blocks_after_budget_is_spent() {
         global_refill_per_second: 0,
         global_window: Duration::from_secs(60),
         global_window_limit: 100,
+        max_tracked_ips: 100_000,
     });
 
     let ctx = context("127.0.0.1:4000");
@@ -68,6 +69,7 @@ fn syn_guard_rejects_when_half_open_limit_is_reached() {
         max_half_open_global: 10,
         backlog_limit: 10,
         syn_timeout: Duration::from_secs(1),
+        max_tracked_ips: 100_000,
     });
 
     let ctx = context("127.0.0.1:4002");
@@ -80,6 +82,7 @@ fn slow_loris_times_out_after_idle_period() {
     let guard = SlowLoris::new(SlowLorisConfig {
         idle_timeout: Duration::from_millis(0),
         grace_period: Duration::from_millis(0),
+        max_tracked_connections: 100_000,
     });
 
     let ctx = context("127.0.0.1:4003");
