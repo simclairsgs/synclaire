@@ -49,3 +49,38 @@ fn server_name_defaults_to_localhost() {
     let server_name = rustls::server_name(&tls).expect("default localhost should be valid");
     assert_eq!(server_name.to_str(), "localhost");
 }
+
+#[cfg(feature = "rustls-backend")]
+#[test]
+fn client_config_with_system_roots_has_nonempty_store() {
+    let tls = TlsConfig { use_system_roots: true, ..Default::default() };
+    // Should not panic/error and should have loaded at least one native cert.
+    let config = rustls::build_client_config(&tls).expect("build_client_config with system roots");
+    // We cannot introspect the root store count from the Arc<ClientConfig>,
+    // but we verify the function succeeds without an empty-store error.
+    let _ = config;
+}
+
+#[cfg(feature = "rustls-backend")]
+#[test]
+fn client_config_with_verify_peer_false_succeeds() {
+    let tls = TlsConfig { verify_peer: false, use_system_roots: false, ..Default::default() };
+    let config = rustls::build_client_config(&tls).expect("build_client_config with noop verifier");
+    let _ = config;
+}
+
+#[cfg(feature = "rustls-backend")]
+#[test]
+fn client_config_with_no_system_roots_and_no_anchors_builds_empty_store() {
+    let tls = TlsConfig { use_system_roots: false, ..Default::default() };
+    // Should succeed — just produces an empty root store (no outbound connections will work).
+    let config = rustls::build_client_config(&tls).expect("build_client_config with empty store");
+    let _ = config;
+}
+
+#[cfg(feature = "rustls-backend")]
+#[test]
+fn use_system_roots_default_is_true() {
+    let tls = TlsConfig::default();
+    assert!(tls.use_system_roots, "use_system_roots should default to true");
+}

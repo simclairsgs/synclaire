@@ -1,10 +1,61 @@
 use std::{fs, sync::Arc};
 
 use rustls::{ClientConfig, RootCertStore, ServerConfig};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, Error as TlsError, SignatureScheme};
 use rustls_pemfile as pemfile;
 
 use crate::{config::{PemSource, TlsConfig}, SynError};
+
+/// Certificate verifier that accepts any server certificate.
+///
+/// Used only when `TlsConfig::verify_peer = false`.
+///
+/// **Security:** This disables all certificate validation and makes the connection
+/// vulnerable to man-in-the-middle attacks. Use only in controlled environments.
+#[derive(Debug)]
+struct NoopServerVerifier;
+
+impl ServerCertVerifier for NoopServerVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, TlsError> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::ED25519,
+        ]
+    }
+}
 
 pub fn backend_name() -> &'static str {
     "rustls"
@@ -88,19 +139,28 @@ pub fn build_server_config(tls: &TlsConfig) -> Result<Arc<ServerConfig>, SynErro
 }
 
 pub fn build_client_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, SynError> {
-    let roots = build_root_store(&tls.trust_anchors)?;
+    let roots = build_root_store_for_client(tls)?;
+    let builder = ClientConfig::builder().with_root_certificates(roots);
 
-    let mut config = if let (Some(cert_chain), Some(private_key)) = (
+    let mut config = if !tls.verify_peer {
+        // SAFETY: caller has explicitly disabled peer verification.
+        let mut cfg = if let (Some(cert_chain), Some(private_key)) = (
+            tls.client_certificate_chain.as_ref(),
+            tls.client_private_key.as_ref(),
+        ) {
+            builder.with_client_auth_cert(load_certs(cert_chain)?, load_private_key(private_key)?)?
+        } else {
+            builder.with_no_client_auth()
+        };
+        cfg.dangerous().set_certificate_verifier(Arc::new(NoopServerVerifier));
+        cfg
+    } else if let (Some(cert_chain), Some(private_key)) = (
         tls.client_certificate_chain.as_ref(),
         tls.client_private_key.as_ref(),
     ) {
-        ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_client_auth_cert(load_certs(cert_chain)?, load_private_key(private_key)?)?
+        builder.with_client_auth_cert(load_certs(cert_chain)?, load_private_key(private_key)?)?
     } else {
-        ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth()
+        builder.with_no_client_auth()
     };
 
     config.alpn_protocols = tls
@@ -110,6 +170,28 @@ pub fn build_client_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, SynErro
         .collect();
 
     Ok(Arc::new(config))
+}
+
+fn build_root_store_for_client(tls: &TlsConfig) -> Result<Arc<RootCertStore>, SynError> {
+    if !tls.trust_anchors.is_empty() {
+        return build_root_store(&tls.trust_anchors);
+    }
+    if tls.use_system_roots {
+        let mut roots = RootCertStore::empty();
+        let native_certs = rustls_native_certs::load_native_certs();
+        // Log warnings for unreadable certs but continue with what was loaded.
+        for err in &native_certs.errors {
+            log::warn!("native cert load warning: {}", err);
+        }
+        for cert in native_certs.certs {
+            if let Err(e) = roots.add(cert) {
+                log::warn!("skipping invalid native cert: {}", e);
+            }
+        }
+        return Ok(Arc::new(roots));
+    }
+    // Explicit empty store — caller requested no roots.
+    Ok(Arc::new(RootCertStore::empty()))
 }
 
 pub fn async_server_acceptor(tls: &TlsConfig) -> Result<tokio_rustls::TlsAcceptor, SynError> {

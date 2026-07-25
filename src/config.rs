@@ -59,6 +59,13 @@ pub struct TlsConfig {
     pub trust_anchors: Vec<PemSource>,
     pub alpn_protocols: Vec<String>,
     pub verify_peer: bool,
+    /// When true and no `trust_anchors` are provided, load native system root certificates.
+    /// Set to false to use only explicitly provided trust_anchors (or an empty root store).
+    ///
+    /// **Security note:** Setting `verify_peer = false` disables certificate verification
+    /// entirely — the connection is vulnerable to man-in-the-middle attacks. Use only in
+    /// controlled environments (e.g. testing, private networks).
+    pub use_system_roots: bool,
     pub require_client_auth: bool,
     pub prefer_aws_lc: bool,
 }
@@ -75,6 +82,7 @@ impl Default for TlsConfig {
             trust_anchors: Vec::new(),
             alpn_protocols: vec!["synclaire/1".to_string()],
             verify_peer: true,
+            use_system_roots: true,
             require_client_auth: false,
             prefer_aws_lc: false,
         }
@@ -139,6 +147,11 @@ impl TlsConfigBuilder {
 
     pub fn verify_peer(mut self, verify_peer: bool) -> Self {
         self.config.verify_peer = verify_peer;
+        self
+    }
+
+    pub fn use_system_roots(mut self, use_system_roots: bool) -> Self {
+        self.config.use_system_roots = use_system_roots;
         self
     }
 

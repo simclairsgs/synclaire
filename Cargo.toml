@@ -13,7 +13,7 @@ categories = ["network-programming", "asynchronous", "cryptography"]
 default = ["async", "rustls-backend"]
 async = ["dep:tokio", "dep:tokio-rustls", "dep:futures"]
 sync = ["dep:futures"]
-rustls-backend = ["dep:rustls"]
+rustls-backend = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pemfile"]
 aws-lc-backend = ["dep:aws-lc-rs"]
 full = ["async", "sync", "rustls-backend", "aws-lc-backend"]
 
@@ -22,7 +22,8 @@ futures = { version = "0.3", optional = true }
 log = "0.4"
 parking_lot = "0.12"
 rustls = { version = "0.23", optional = true }
-rustls-pemfile = "2.2"
+rustls-pemfile = { version = "2.2", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
 thiserror = "2"
 tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "macros", "time", "sync", "fs"], optional = true }
 tokio-rustls = { version = "0.26", optional = true }
