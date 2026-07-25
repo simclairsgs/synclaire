@@ -52,7 +52,7 @@ fn server_name_defaults_to_localhost() {
 
 #[cfg(feature = "rustls-backend")]
 #[test]
-fn client_config_with_system_roots_has_nonempty_store() {
+fn client_config_with_system_roots_builds_successfully() {
     let tls = TlsConfig { use_system_roots: true, ..Default::default() };
     // Should not panic/error and should have loaded at least one native cert.
     let config = rustls::build_client_config(&tls).expect("build_client_config with system roots");

@@ -58,13 +58,12 @@ pub struct TlsConfig {
     pub client_private_key: Option<PemSource>,
     pub trust_anchors: Vec<PemSource>,
     pub alpn_protocols: Vec<String>,
-    pub verify_peer: bool,
-    /// When true and no `trust_anchors` are provided, load native system root certificates.
-    /// Set to false to use only explicitly provided trust_anchors (or an empty root store).
-    ///
     /// **Security note:** Setting `verify_peer = false` disables certificate verification
     /// entirely — the connection is vulnerable to man-in-the-middle attacks. Use only in
     /// controlled environments (e.g. testing, private networks).
+    pub verify_peer: bool,
+    /// When `true` and no `trust_anchors` are provided, load native system root certificates.
+    /// Set to `false` to use only explicitly provided `trust_anchors` (or an empty root store).
     pub use_system_roots: bool,
     pub require_client_auth: bool,
     pub prefer_aws_lc: bool,

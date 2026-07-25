@@ -48,11 +48,21 @@ impl ServerCertVerifier for NoopServerVerifier {
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        // The noop verifier must accept every scheme a real server might use.
         vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
             SignatureScheme::RSA_PKCS1_SHA256,
             SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
             SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
             SignatureScheme::ED25519,
+            SignatureScheme::ED448,
         ]
     }
 }
@@ -143,7 +153,7 @@ pub fn build_client_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, SynErro
     let builder = ClientConfig::builder().with_root_certificates(roots);
 
     let mut config = if !tls.verify_peer {
-        // SAFETY: caller has explicitly disabled peer verification.
+        // Caller has disabled peer verification; install the no-op verifier.
         let mut cfg = if let (Some(cert_chain), Some(private_key)) = (
             tls.client_certificate_chain.as_ref(),
             tls.client_private_key.as_ref(),
