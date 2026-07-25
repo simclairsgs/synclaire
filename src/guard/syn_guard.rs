@@ -1,6 +1,6 @@
 use std::{
-    collections::HashMap,
-    net::IpAddr,
+    collections::{HashMap, HashSet},
+    net::{IpAddr, SocketAddr},
     time::{Duration, Instant},
 };
 
@@ -32,6 +32,8 @@ struct HalfOpenState {
     total: usize,
     per_ip: HashMap<IpAddr, usize>,
     started_at: HashMap<IpAddr, Instant>,
+    /// Connections that have passed on_established — used to avoid double-decrementing.
+    established: HashSet<SocketAddr>,
 }
 
 pub struct SynGuard {
@@ -69,12 +71,37 @@ impl SynGuard {
         Ok(())
     }
 
-    fn establish(&self, ip: IpAddr) {
+    fn establish(&self, addr: SocketAddr) {
+        let ip = addr.ip();
         let mut state = self.state.lock();
         if state.total > 0 {
             state.total -= 1;
         }
 
+        if let Some(count) = state.per_ip.get_mut(&ip) {
+            if *count > 1 {
+                *count -= 1;
+            } else {
+                state.per_ip.remove(&ip);
+                state.started_at.remove(&ip);
+            }
+        }
+
+        state.established.insert(addr);
+    }
+
+    fn close(&self, addr: SocketAddr) {
+        let mut state = self.state.lock();
+        // Only decrement half-open counter if we never called establish.
+        if state.established.remove(&addr) {
+            // Was established — counter was already decremented in establish().
+            return;
+        }
+        // Not established — still counted as half-open; decrement now.
+        let ip = addr.ip();
+        if state.total > 0 {
+            state.total -= 1;
+        }
         if let Some(count) = state.per_ip.get_mut(&ip) {
             if *count > 1 {
                 *count -= 1;
@@ -96,7 +123,7 @@ impl Guard for SynGuard {
     }
 
     fn on_established(&self, context: &GuardContext) -> Result<(), SynError> {
-        self.establish(context.peer_ip);
+        self.establish(context.peer_addr);
         Ok(())
     }
 
@@ -107,7 +134,52 @@ impl Guard for SynGuard {
                 return Err(SynError::timeout(self.config.syn_timeout, "waiting for a connection to settle"));
             }
         }
-
         Ok(())
+    }
+
+    fn on_close(&self, context: &GuardContext) {
+        self.close(context.peer_addr);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::guard::{Guard, GuardContext};
+    use std::net::SocketAddr;
+
+    fn ctx(port: u16) -> GuardContext {
+        let addr: SocketAddr = format!("1.2.3.4:{}", port).parse().unwrap();
+        GuardContext::new(addr, None, false)
+    }
+
+    #[test]
+    fn half_open_counter_released_on_close_without_establish() {
+        let guard = SynGuard::new(SynGuardConfig { max_half_open_global: 2, ..Default::default() });
+
+        // Reserve two connections — fills the global limit.
+        guard.on_reserve(&ctx(1001)).expect("reserve 1");
+        guard.on_reserve(&ctx(1002)).expect("reserve 2");
+
+        // Third should be rejected.
+        assert!(guard.on_reserve(&ctx(1003)).is_err(), "should be at limit");
+
+        // Close the first without establishing — simulates a TLS handshake failure.
+        guard.on_close(&ctx(1001));
+
+        // Now there is room for one more.
+        guard.on_reserve(&ctx(1004)).expect("room after close");
+    }
+
+    #[test]
+    fn half_open_counter_not_double_decremented_after_establish() {
+        let guard = SynGuard::new(SynGuardConfig { max_half_open_global: 1, ..Default::default() });
+        guard.on_reserve(&ctx(1001)).expect("reserve");
+        guard.on_established(&ctx(1001)).expect("establish");
+        // Close after establish — must NOT double-decrement (would underflow).
+        guard.on_close(&ctx(1001));
+
+        // The global counter should now be 0, allowing another connection.
+        guard.on_reserve(&ctx(1002)).expect("slot free after established close");
     }
 }
