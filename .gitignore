@@ -2,6 +2,7 @@ target/
 
 # Editor settings
 .vscode/
+.idea/
 
 # macOS
 .DS_Store
