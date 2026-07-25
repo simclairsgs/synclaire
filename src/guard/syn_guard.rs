@@ -78,7 +78,7 @@ impl SynGuard {
             }
         }
 
-        state.total = state.total + 1;
+        state.total += 1;
         if is_new_ip {
             state.ip_order.push_back(ip);
         }

@@ -197,8 +197,8 @@ impl RoutingRule {
 
         if has_ip_criteria {
             let in_exact = self.source_ips.contains(&peer_ip);
-            let in_group = self.source_group.as_ref().map_or(false, |g| {
-                groups.get(g).map_or(false, |group| group.contains(peer_ip))
+            let in_group = self.source_group.as_ref().is_some_and(|g| {
+                groups.get(g).is_some_and(|group| group.contains(peer_ip))
             });
 
             if !in_exact && !in_group {

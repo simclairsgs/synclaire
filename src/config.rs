@@ -170,7 +170,7 @@ impl TlsConfigBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct GuardStackConfig {
     pub rate_limiter: Option<RateLimiterConfig>,
     pub ip_ban: Option<IpBanConfig>,
@@ -178,19 +178,6 @@ pub struct GuardStackConfig {
     pub syn_guard: Option<SynGuardConfig>,
     pub slow_loris: Option<SlowLorisConfig>,
     pub udp_amplification: Option<UdpAmplificationConfig>,
-}
-
-impl Default for GuardStackConfig {
-    fn default() -> Self {
-        Self {
-            rate_limiter: None,
-            ip_ban: None,
-            throttle: None,
-            syn_guard: None,
-            slow_loris: None,
-            udp_amplification: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]

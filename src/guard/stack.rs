@@ -20,6 +20,12 @@ pub struct GuardStack {
     inner: Arc<GuardStackInner>,
 }
 
+impl Default for GuardStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GuardStack {
     pub fn builder() -> GuardStackBuilder {
         GuardStackBuilder::default()
@@ -35,8 +41,7 @@ impl GuardStack {
     }
 
     pub fn reserve(&self, context: GuardContext) -> Result<GuardSession, SynError> {
-        let mut accepted: usize = 0;
-        for guard in &self.inner.guards {
+        for (accepted, guard) in self.inner.guards.iter().enumerate() {
             if let Err(err) = guard.on_reserve(&context) {
                 // Roll back: call on_close on guards [0..accepted) in reverse.
                 for rollback in self.inner.guards[..accepted].iter().rev() {
@@ -61,7 +66,6 @@ impl GuardStack {
                 detail: format!("{} allowed reservation", guard.name()),
                 occurred_at: Instant::now(),
             });
-            accepted += 1;
         }
 
         Ok(GuardSession {

@@ -214,5 +214,5 @@ pub fn async_client_connector(tls: &TlsConfig) -> Result<tokio_rustls::TlsConnec
 
 pub fn server_name(tls: &TlsConfig) -> Result<ServerName<'static>, SynError> {
     let name = tls.server_name.as_deref().unwrap_or("localhost");
-    Ok(ServerName::try_from(name.to_owned()).map_err(|error| SynError::tls(error.to_string()))?)
+    ServerName::try_from(name.to_owned()).map_err(|error| SynError::tls(error.to_string()))
 }
