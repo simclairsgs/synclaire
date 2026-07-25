@@ -7,7 +7,7 @@
 //
 // In separate terminals:
 //   Terminal 1: cargo run --example mtls-client-server-async --features async -- server
-//   Terminal 2: cargo run --example mtls-client-server-async --features async -- client
+//   Terminal 2: cargo run --example mtls-client-server-async --features async -- client <port>
 
 use std::env;
 use synclaire::{
@@ -59,9 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match mode {
         "server" => run_server().await,
-        "client" => run_client().await,
+        "client" => {
+            let port = args
+                .get(2)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(9006);
+            run_client(port).await
+        }
         _ => {
-            eprintln!("Usage: {} [server|client]", args[0]);
+            eprintln!("Usage: {} [server|client] [port for client mode]", args[0]);
             Ok(())
         }
     }
@@ -80,7 +86,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = ServerConfig::builder()
         .name("mtls-async-server")
-        .bind_addr("127.0.0.1:9006".parse()?)
+        .bind_addr("127.0.0.1:0".parse()?)
         .tls(tls_config)
         .build();
 
@@ -90,8 +96,8 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_client() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to mTLS Echo Server (Asynchronous - Mutual Authentication)...");
+async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Connecting to mTLS Echo Server (Asynchronous - Mutual Authentication) on port {}...", port);
 
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -105,7 +111,7 @@ async fn run_client() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let config = ClientConfig::builder()
-        .connect_addr("127.0.0.1:9006".parse()?)
+        .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .tls(tls_config)
         .build();
 

@@ -1,3 +1,4 @@
+use std::env;
 use synclaire::{client::AsyncClient, AsyncStream, ClientConfig, SynError};
 use tracing_subscriber::EnvFilter;
 
@@ -9,7 +10,15 @@ async fn main() -> Result<(), SynError> {
         .try_init()
         .ok();
 
-    let config = ClientConfig::builder().name("basic-client").build();
+    let port = env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(7000);
+
+    let config = ClientConfig::builder()
+        .name("basic-client")
+        .connect_addr(format!("127.0.0.1:{}", port).parse().unwrap())
+        .build();
     let mut connection = AsyncClient::new(config).connect().await?;
 
     // Check what you actually got.
@@ -33,7 +42,15 @@ async fn main() -> Result<(), SynError> {
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
 fn main() -> Result<(), SynError> {
-    let config = ClientConfig::builder().name("basic-client").build();
+    let port = env::args()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(7000);
+
+    let config = ClientConfig::builder()
+        .name("basic-client")
+        .connect_addr(format!("127.0.0.1:{}", port).parse().unwrap())
+        .build();
     let mut connection = synclaire::client::SyncClient::new(config).connect()?;
     futures::executor::block_on(async {
         connection.write_all(b"hello from synclaire\n").await?;

@@ -56,14 +56,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = env::args().collect();
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("server");
+    let port = args
+        .get(2)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9008);
 
     match mode {
         "server" => run_server().await,
-        "client-tcp" => run_client_tcp().await,
-        "client-tls" => run_client_tls().await,
+        "client-tcp" => run_client_tcp(port).await,
+        "client-tls" => run_client_tls(port).await,
         _ => {
             eprintln!(
-                "Usage: {} [server|client-tcp|client-tls]",
+                "Usage: {} [server|client-tcp|client-tls] [port for client modes]",
                 args[0]
             );
             Ok(())
@@ -82,7 +86,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = ServerConfig::builder()
         .name("mixed-async-server")
-        .bind_addr("127.0.0.1:9008".parse()?)
+        .bind_addr("127.0.0.1:0".parse()?)
         .tls(tls_config)
         .accept_mode(AcceptMode::Mixed)
         .build();
@@ -93,14 +97,14 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_client_tcp() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to Mixed-Mode Server (Asynchronous) with plain TCP...");
+async fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Connecting to Mixed-Mode Server (Asynchronous) with plain TCP on port {}...", port);
 
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     let config = ClientConfig::builder()
-        .connect_addr("127.0.0.1:9008".parse()?)
+        .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .build();
 
     let mut conn = synclaire::AsyncClient::new(config).connect().await?;
@@ -118,8 +122,8 @@ async fn run_client_tcp() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_client_tls() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to Mixed-Mode Server (Asynchronous) with TLS...");
+async fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Connecting to Mixed-Mode Server (Asynchronous) with TLS on port {}...", port);
 
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -131,7 +135,7 @@ async fn run_client_tls() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let config = ClientConfig::builder()
-        .connect_addr("127.0.0.1:9008".parse()?)
+        .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .tls(tls_config)
         .build();
 

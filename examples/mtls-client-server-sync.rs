@@ -7,7 +7,7 @@
 //
 // In separate terminals:
 //   Terminal 1: cargo run --example mtls-client-server-sync --features sync -- server
-//   Terminal 2: cargo run --example mtls-client-server-sync --features sync -- client
+//   Terminal 2: cargo run --example mtls-client-server-sync --features sync -- client <port>
 
 use std::env;
 
@@ -59,9 +59,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match mode {
         "server" => run_server(),
-        "client" => run_client(),
+        "client" => {
+            let port = args
+                .get(2)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(9005);
+            run_client(port)
+        }
         _ => {
-            eprintln!("Usage: {} [server|client]", args[0]);
+            eprintln!("Usage: {} [server|client] [port for client mode]", args[0]);
             Ok(())
         }
     }
@@ -80,7 +86,7 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = ServerConfig::builder()
         .name("mtls-sync-server")
-        .bind_addr("127.0.0.1:9005".parse()?)
+        .bind_addr("127.0.0.1:0".parse()?)
         .tls(tls_config)
         .build();
 
@@ -90,11 +96,11 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_client() -> Result<(), Box<dyn std::error::Error>> {
+fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    println!("Connecting to mTLS Echo Server (Synchronous - Mutual Authentication)...");
+    println!("Connecting to mTLS Echo Server (Synchronous - Mutual Authentication) on port {}...", port);
 
     // Give server time to start
     thread::sleep(Duration::from_millis(500));
@@ -108,7 +114,7 @@ fn run_client() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let config = ClientConfig::builder()
-        .connect_addr("127.0.0.1:9005".parse()?)
+        .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .tls(tls_config)
         .build();
 

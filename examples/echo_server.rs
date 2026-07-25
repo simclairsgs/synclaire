@@ -75,6 +75,7 @@ async fn main() -> Result<(), SynError> {
 
     let config = ServerConfig::builder()
         .name("echo-server")
+        .bind_addr("127.0.0.1:0".parse().unwrap())
         .connection_timeout(Duration::from_secs(60))
         .build();
 
@@ -84,7 +85,10 @@ async fn main() -> Result<(), SynError> {
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
 fn main() -> Result<(), SynError> {
-    let config = ServerConfig::builder().name("echo-server").build();
+    let config = ServerConfig::builder()
+        .name("echo-server")
+        .bind_addr("127.0.0.1:0".parse().unwrap())
+        .build();
     let server = synclaire::SyncServer::new(config, EchoHandler);
     server.run()
 }

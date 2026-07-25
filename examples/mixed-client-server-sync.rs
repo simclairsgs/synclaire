@@ -44,13 +44,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = env::args().collect();
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("server");
+    let port = args
+        .get(2)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(9007);
 
     match mode {
         "server" => run_server(),
-        "client-tcp" => run_client_tcp(),
-        "client-tls" => run_client_tls(),
+        "client-tcp" => run_client_tcp(port),
+        "client-tls" => run_client_tls(port),
         _ => {
-            eprintln!("Usage: {} [server|client-tcp|client-tls]", args[0]);
+            eprintln!("Usage: {} [server|client-tcp|client-tls] [port for client modes]", args[0]);
             Ok(())
         }
     }
@@ -67,7 +71,7 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = ServerConfig::builder()
         .name("mixed-sync-server")
-        .bind_addr("127.0.0.1:9007".parse()?)
+        .bind_addr("127.0.0.1:0".parse()?)
         .tls(tls_config)
         .accept_mode(AcceptMode::Mixed)
         .build();
@@ -77,15 +81,15 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_client_tcp() -> Result<(), Box<dyn std::error::Error>> {
+fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    println!("Connecting to Mixed-Mode Server (Synchronous) with plain TCP...");
+    println!("Connecting to Mixed-Mode Server (Synchronous) with plain TCP on port {}...", port);
     thread::sleep(Duration::from_millis(500));
 
     let config = ClientConfig::builder()
-        .connect_addr("127.0.0.1:9007".parse()?)
+        .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .build();
 
     let mut conn = synclaire::SyncClient::new(config).connect()?;
@@ -103,11 +107,11 @@ fn run_client_tcp() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_client_tls() -> Result<(), Box<dyn std::error::Error>> {
+fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    println!("Connecting to Mixed-Mode Server (Synchronous) with TLS...");
+    println!("Connecting to Mixed-Mode Server (Synchronous) with TLS on port {}...", port);
     thread::sleep(Duration::from_millis(500));
 
     let tls_config = TlsConfig::builder()
@@ -117,7 +121,7 @@ fn run_client_tls() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let config = ClientConfig::builder()
-        .connect_addr("127.0.0.1:9007".parse()?)
+        .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .tls(tls_config)
         .build();
 
