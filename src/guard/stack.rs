@@ -35,8 +35,23 @@ impl GuardStack {
     }
 
     pub fn reserve(&self, context: GuardContext) -> Result<GuardSession, SynError> {
+        let mut accepted: usize = 0;
         for guard in &self.inner.guards {
-            guard.on_reserve(&context)?;
+            if let Err(err) = guard.on_reserve(&context) {
+                // Roll back: call on_close on guards [0..accepted) in reverse.
+                for rollback in self.inner.guards[..accepted].iter().rev() {
+                    rollback.on_close(&context);
+                }
+                self.inner.emit(GuardEvent {
+                    guard: guard.name(),
+                    kind: GuardEventKind::Reserve,
+                    peer_addr: context.peer_addr,
+                    decision: GuardDecision::Deny(SynError::guard_rejected(guard.name(), err.to_string())),
+                    detail: format!("{} rejected reservation", guard.name()),
+                    occurred_at: Instant::now(),
+                });
+                return Err(SynError::guard_rejected(guard.name(), err.to_string()));
+            }
             self.inner.emit(GuardEvent {
                 guard: guard.name(),
                 kind: GuardEventKind::Reserve,
@@ -45,6 +60,7 @@ impl GuardStack {
                 detail: format!("{} allowed reservation", guard.name()),
                 occurred_at: Instant::now(),
             });
+            accepted += 1;
         }
 
         Ok(GuardSession {
@@ -172,5 +188,62 @@ impl GuardStackBuilder {
                 observer: self.observer,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::guard::{Guard, GuardContext};
+    use crate::SynError;
+    use std::{net::SocketAddr, sync::{atomic::{AtomicUsize, Ordering}, Arc}};
+
+    struct CountingGuard {
+        reserves: Arc<AtomicUsize>,
+        closes: Arc<AtomicUsize>,
+        reject_on_reserve: bool,
+    }
+
+    impl Guard for CountingGuard {
+        fn name(&self) -> &'static str { "counting" }
+        fn on_reserve(&self, _ctx: &GuardContext) -> Result<(), SynError> {
+            if self.reject_on_reserve {
+                return Err(SynError::runtime("intentional reject"));
+            }
+            self.reserves.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn on_close(&self, _ctx: &GuardContext) {
+            self.closes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn ctx() -> GuardContext {
+        let addr: SocketAddr = "127.0.0.1:1234".parse().unwrap();
+        GuardContext::new(addr, None, false)
+    }
+
+    #[test]
+    fn reserve_rollback_calls_on_close_for_accepted_guards() {
+        let reserves = Arc::new(AtomicUsize::new(0));
+        let closes = Arc::new(AtomicUsize::new(0));
+
+        let first = CountingGuard {
+            reserves: Arc::clone(&reserves),
+            closes: Arc::clone(&closes),
+            reject_on_reserve: false,
+        };
+        let second = CountingGuard {
+            reserves: Arc::new(AtomicUsize::new(0)),
+            closes: Arc::new(AtomicUsize::new(0)),
+            reject_on_reserve: true,
+        };
+
+        let stack = GuardStack::builder().push(first).push(second).build();
+        let result = stack.reserve(ctx());
+
+        assert!(result.is_err(), "stack should reject");
+        assert_eq!(reserves.load(Ordering::SeqCst), 1, "first guard reserved");
+        assert_eq!(closes.load(Ordering::SeqCst), 1, "first guard must be closed on rollback");
     }
 }
