@@ -107,8 +107,8 @@ impl Guard for SlowLoris {
     }
 
     fn on_activity(&self, context: &GuardContext) -> Result<(), SynError> {
-        self.note(context.peer_addr);
         self.check_idle(context.peer_addr)?;
+        self.note(context.peer_addr);
         Ok(())
     }
 

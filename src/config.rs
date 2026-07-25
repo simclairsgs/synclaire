@@ -184,6 +184,15 @@ pub struct GuardStackConfig {
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
     pub worker_threads: usize,
+    /// Maximum allowed duration for a connection.
+    ///
+    /// **Async servers:** This is the total connection lifetime — handlers that run
+    /// longer than this duration are cancelled. This includes long-lived streaming
+    /// connections. Set to a large value (e.g. `Duration::MAX`) for persistent sessions.
+    ///
+    /// **Sync servers:** This is applied as a per-read/write socket timeout
+    /// (`SO_RCVTIMEO` / `SO_SNDTIMEO`). The connection is terminated if any
+    /// individual read or write blocks for longer than this duration.
     pub connection_timeout: Duration,
     pub max_connections: usize,
     pub tcp_nodelay: bool,
@@ -233,6 +242,15 @@ impl ServerConfigBuilder {
         self
     }
 
+    /// Set the maximum allowed duration for a connection.
+    ///
+    /// **Async servers:** This is the total connection lifetime — handlers that run
+    /// longer than this duration are cancelled. This includes long-lived streaming
+    /// connections. Set to a large value (e.g. `Duration::MAX`) for persistent sessions.
+    ///
+    /// **Sync servers:** This is applied as a per-read/write socket timeout
+    /// (`SO_RCVTIMEO` / `SO_SNDTIMEO`). The connection is terminated if any
+    /// individual read or write blocks for longer than this duration.
     pub fn connection_timeout(mut self, timeout: Duration) -> Self {
         self.config.connection_timeout = timeout;
         self

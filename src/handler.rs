@@ -462,7 +462,7 @@ where
     }
 }
 
-/// Handler trait for use with [`SyncServer`].
+/// Handler trait for use with [`crate::SyncServer`].
 ///
 /// Unlike [`ConnectionHandler`], this is a synchronous call — you may not call
 /// any Tokio async primitives inside the implementation. If you need async I/O
