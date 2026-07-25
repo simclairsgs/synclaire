@@ -7,7 +7,7 @@
 // - ProxyClient: sync client helper that sends proxy auth preface
 // - ProxyAuthHandle: runtime-updatable credentials
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 
@@ -193,6 +193,30 @@ impl ProxyConfig {
     }
 }
 
+/// Parse HTTP proxy auth headers from a raw byte slice, return trailing payload.
+fn parse_http_auth_from_bytes(data: &[u8], auth: &ProxyAuth) -> Result<Vec<u8>, SynError> {
+    let header_end = data
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|i| i + 4)
+        .unwrap_or(data.len());
+
+    let headers_raw = &data[..header_end];
+    let trailing = data[header_end..].to_vec();
+    let headers = String::from_utf8_lossy(headers_raw);
+
+    for line in headers.lines().skip(1) {
+        if let Some(value) = line.strip_prefix("Authorization: ") {
+            if auth.validate_header(value.trim()) {
+                return Ok(trailing);
+            }
+            return Err(SynError::authentication_error("Invalid credentials"));
+        }
+    }
+
+    Err(SynError::authentication_error("Authorization required"))
+}
+
 /// TCP proxy connection handler.
 #[derive(Clone, Debug)]
 pub struct TcpProxy {
@@ -231,49 +255,59 @@ impl TcpProxy {
     pub fn forward_to(&self, mut client: TcpStream, override_backend: Option<SocketAddr>) -> Result<(), SynError> {
         let effective_auth = self.effective_auth()?;
 
-        // Validate auth before opening backend connection.
-        if matches!(effective_auth, ProxyAuth::Basic(_, _)) {
-            self.validate_http_auth(&mut client, &effective_auth)?;
-        }
+        // Validate auth and capture any payload bytes that arrived after the
+        // \r\n\r\n header terminator. These would be silently lost if we used
+        // a BufReader, because BufReader buffers ahead and those bytes never
+        // reach the original TcpStream.
+        let trailing_payload = if matches!(effective_auth, ProxyAuth::Basic(_, _)) {
+            self.validate_http_auth_stream(&mut client, &effective_auth)?
+        } else {
+            Vec::new()
+        };
 
         let backend_addr = override_backend.unwrap_or(self.config.backend_addr);
-        let backend = TcpStream::connect(backend_addr)
+        let mut backend = TcpStream::connect(backend_addr)
             .map_err(|e| SynError::connection_error(e.to_string()))?;
+
+        // Write any payload the client sent immediately after the CONNECT
+        // headers before handing off to bidirectional forwarding.
+        if !trailing_payload.is_empty() {
+            backend.write_all(&trailing_payload).map_err(|e| {
+                SynError::connection_error(format!("Failed to write trailing payload to backend: {}", e))
+            })?;
+        }
 
         self.forward_bidirectional(&client, &backend)
     }
 
-    /// Validate HTTP Basic Authentication from client.
-    fn validate_http_auth(&self, client: &mut TcpStream, auth: &ProxyAuth) -> Result<(), SynError> {
-        let mut reader = BufReader::new(client.try_clone().map_err(|e| {
-            SynError::connection_error(format!("Failed to clone client stream: {}", e))
-        })?);
-
-        // First line is request/status line. We only need to consume it.
-        let mut line = String::new();
-        reader.read_line(&mut line).map_err(|e| {
-            SynError::connection_error(format!("Failed to read auth preface: {}", e))
-        })?;
+    /// Read HTTP proxy auth headers directly from the stream without BufReader,
+    /// returning any bytes that arrived after the \r\n\r\n terminator so they
+    /// are not silently dropped before backend forwarding begins.
+    fn validate_http_auth_stream(&self, client: &mut TcpStream, auth: &ProxyAuth) -> Result<Vec<u8>, SynError> {
+        let mut data = Vec::with_capacity(1024);
+        let mut chunk = [0u8; 512];
 
         loop {
-            line.clear();
-            reader.read_line(&mut line).map_err(|e| {
-                SynError::connection_error(format!("Failed to read proxy header: {}", e))
+            let n = client.read(&mut chunk).map_err(|e| {
+                SynError::connection_error(format!("Failed to read auth headers: {}", e))
             })?;
 
-            if line.is_empty() || line == "\r\n" {
+            if n == 0 {
+                return Err(SynError::authentication_error("connection closed before authorization headers"));
+            }
+
+            data.extend_from_slice(&chunk[..n]);
+
+            if data.windows(4).any(|w| w == b"\r\n\r\n") {
                 break;
             }
 
-            if let Some(header) = line.strip_prefix("Authorization: ") {
-                if auth.validate_header(header.trim()) {
-                    return Ok(());
-                }
-                return Err(SynError::authentication_error("Invalid credentials"));
+            if data.len() > 64 * 1024 {
+                return Err(SynError::authentication_error("proxy auth headers too large"));
             }
         }
 
-        Err(SynError::authentication_error("Authorization required"))
+        parse_http_auth_from_bytes(&data, auth)
     }
 
     /// Forward data bidirectionally between client and backend.
@@ -840,6 +874,30 @@ mod tests {
 
         handle.set_none().expect("set_none");
         assert_eq!(handle.current().expect("current"), ProxyAuth::None);
+    }
+
+    #[test]
+    fn parse_http_auth_bytes_extracts_trailing_payload() {
+        // dXNlcjpwYXNz is base64("user:pass")
+        let raw = b"CONNECT backend:80 HTTP/1.1\r\nAuthorization: Basic dXNlcjpwYXNz\r\n\r\nHELLO";
+        let auth = ProxyAuth::basic("user", "pass");
+        let result = parse_http_auth_from_bytes(raw, &auth).expect("auth ok");
+        assert_eq!(result, b"HELLO");
+    }
+
+    #[test]
+    fn parse_http_auth_bytes_rejects_bad_credentials() {
+        // d3Jvbmc= is base64("wrong")
+        let raw = b"CONNECT backend:80 HTTP/1.1\r\nAuthorization: Basic d3Jvbmc=\r\n\r\n";
+        let auth = ProxyAuth::basic("user", "pass");
+        assert!(parse_http_auth_from_bytes(raw, &auth).is_err());
+    }
+
+    #[test]
+    fn parse_http_auth_bytes_no_auth_header() {
+        let raw = b"CONNECT backend:80 HTTP/1.1\r\nHost: backend\r\n\r\n";
+        let auth = ProxyAuth::basic("user", "pass");
+        assert!(parse_http_auth_from_bytes(raw, &auth).is_err());
     }
 }
 
