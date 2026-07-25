@@ -91,7 +91,7 @@ impl SynError {
     }
 }
 
-#[cfg(feature = "rustls-backend")]
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
 impl From<rustls::Error> for SynError {
     fn from(error: rustls::Error) -> Self {
         Self::tls(error.to_string())

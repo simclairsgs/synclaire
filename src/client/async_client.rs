@@ -1,9 +1,11 @@
 use crate::{
-    client::{tcp, tls},
+    client::tcp,
     config::ClientConfig,
     handler::Connection,
     SynError,
 };
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+use crate::client::tls;
 
 pub struct AsyncClient {
     config: ClientConfig,
@@ -15,6 +17,16 @@ impl AsyncClient {
     }
 
     pub async fn connect(self) -> Result<Connection, SynError> {
+        let timeout = self.config.connection_timeout;
+        let addr = self.config.connect_addr;
+        tokio::time::timeout(timeout, self.connect_inner())
+            .await
+            .map_err(|_| SynError::connection_error(format!(
+                "connection to {} timed out after {:?}", addr, timeout
+            )))?
+    }
+
+    async fn connect_inner(self) -> Result<Connection, SynError> {
         log::info!("client connecting to {}", self.config.connect_addr);
 
         let stream = tcp::connect_async(self.config.connect_addr).await?;
@@ -26,10 +38,17 @@ impl AsyncClient {
         let peer_addr = stream.peer_addr()?;
 
         if self.config.tls.enabled {
-            let tls_stream = tls::connect_async(stream, &self.config.tls).await?;
-            let mut metadata = crate::handler::ConnectionMetadata::new(peer_addr, local_addr, true);
-            metadata.tls_server_name = self.config.tls.server_name.clone();
-            Ok(Connection::from_client_tls(metadata, tls_stream))
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+            {
+                let tls_stream = tls::connect_async(stream, &self.config.tls).await?;
+                let mut metadata = crate::handler::ConnectionMetadata::new(peer_addr, local_addr, true);
+                metadata.tls_server_name = self.config.tls.server_name.clone();
+                return Ok(Connection::from_client_tls(metadata, tls_stream));
+            }
+            #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+            return Err(SynError::UnsupportedFeature(
+                "TLS requires the rustls-backend or aws-lc-backend feature",
+            ));
         } else {
             let metadata = crate::handler::ConnectionMetadata::new(peer_addr, local_addr, false);
             Ok(Connection::from_async_tcp(metadata, stream))

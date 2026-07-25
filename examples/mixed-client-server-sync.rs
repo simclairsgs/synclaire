@@ -1,23 +1,14 @@
-// Mixed-Mode (TCP + TLS) Client-Server Example (Synchronous)
-// This example demonstrates a server that accepts both TCP and TLS connections on the same port
-// using automatic protocol detection.
-//
-// Usage:
+// Sync mixed-mode server: accepts both TCP and TLS on the same port.
+//   cd examples && sh generate-certs.sh && cd ..
 //   cargo run --example mixed-client-server-sync --features sync
-//
-// Modes:
-//   demo       (default) — binds to an OS-assigned port, runs server + both clients in-process
-//   server                — stand-alone server; prints the actual port
-//   client-tcp <port>     — plain-TCP client
-//   client-tls <port>     — TLS client
 
 use std::env;
-
 use std::io::{Read, Write};
+
 use synclaire::{
     config::{AcceptMode, ClientConfig, ServerConfig, TlsConfig},
     handler::SyncConnectionHandler,
-    PemSource, SyncServer, SynError,
+    PemSource, SyncServer,
 };
 
 struct EchoHandler;
@@ -135,6 +126,7 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{Read, Write};
     use std::thread;
     use std::time::Duration;
 
@@ -145,22 +137,22 @@ fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .build();
 
-    let mut conn = synclaire::SyncClient::new(config).connect()?;
+    let conn = synclaire::SyncClient::new(config).connect()?;
     println!("Connected (TCP) to server: {}", conn.peer_addr());
 
+    let mut stream = conn.into_stream().into_sync().expect("sync stream");
     let message = b"Hello from Mixed-Mode Sync Client (TCP)!";
-    futures::executor::block_on(async {
-        conn.write_all(message).await?;
-        let mut buf = [0u8; 1024];
-        let n = conn.read(&mut buf).await?;
-        println!("Received (TCP): {}", String::from_utf8_lossy(&buf[..n]));
-        Ok::<(), SynError>(())
-    })?;
+    stream.write_all(message)?;
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf)?;
+    println!("Received (TCP): {}", String::from_utf8_lossy(&buf[..n]));
 
     Ok(())
 }
 
 fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{Read, Write};
     use std::thread;
     use std::time::Duration;
 
@@ -170,7 +162,7 @@ fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let tls_config = TlsConfig::builder()
         .enabled(true)
         .server_name("localhost")
-        .trust_anchor(PemSource::file("examples/certs/server.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .build();
 
     let config = ClientConfig::builder()
@@ -178,17 +170,16 @@ fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .tls(tls_config)
         .build();
 
-    let mut conn = synclaire::SyncClient::new(config).connect()?;
+    let conn = synclaire::SyncClient::new(config).connect()?;
     println!("Connected (TLS) to server: {}", conn.peer_addr());
 
+    let mut stream = conn.into_stream().into_sync().expect("sync stream");
     let message = b"Hello from Mixed-Mode Sync Client (TLS)!";
-    futures::executor::block_on(async {
-        conn.write_all(message).await?;
-        let mut buf = [0u8; 1024];
-        let n = conn.read(&mut buf).await?;
-        println!("Received (TLS): {}", String::from_utf8_lossy(&buf[..n]));
-        Ok::<(), SynError>(())
-    })?;
+    stream.write_all(message)?;
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf)?;
+    println!("Received (TLS): {}", String::from_utf8_lossy(&buf[..n]));
 
     Ok(())
 }

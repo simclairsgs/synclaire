@@ -1,19 +1,9 @@
-// Routing module for IP-based proxy routing (AppIPTable).
-//
-// Provides:
-// - IpPrefix: simple CIDR-prefix matching without external dependencies.
-// - IpGroup: named group of IPs and prefixes.
-// - RouteAction: what to do with a matched connection.
-// - RoutingRule: match criteria → action.
-// - RoutingTable: ordered list of rules evaluated top-to-bottom with a default.
-
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, RwLock};
 
 use crate::load_balancer::BackendPool;
 
-/// Simple IP prefix for CIDR-style matching without requiring the `ipnet` crate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IpPrefix {
     pub base: IpAddr,
@@ -21,7 +11,6 @@ pub struct IpPrefix {
 }
 
 impl IpPrefix {
-    /// Create an IPv4 CIDR prefix (e.g. 192.168.1.0/24).
     pub fn v4(a: u8, b: u8, c: u8, d: u8, prefix_len: u8) -> Self {
         Self {
             base: IpAddr::V4(Ipv4Addr::new(a, b, c, d)),
@@ -29,7 +18,6 @@ impl IpPrefix {
         }
     }
 
-    /// Create an IPv6 CIDR prefix.
     pub fn v6(segments: [u16; 8], prefix_len: u8) -> Self {
         let [a, b, c, d, e, f, g, h] = segments;
         Self {
@@ -38,7 +26,6 @@ impl IpPrefix {
         }
     }
 
-    /// Parse from "addr/prefix_len" notation.
     pub fn parse(s: &str) -> Option<Self> {
         let (addr_str, prefix_str) = s.split_once('/')?;
         let base = addr_str.parse().ok()?;
@@ -46,7 +33,6 @@ impl IpPrefix {
         Some(Self { base, prefix_len })
     }
 
-    /// Returns true if `ip` falls within this prefix.
     pub fn contains(&self, ip: IpAddr) -> bool {
         match (self.base, ip) {
             (IpAddr::V4(base), IpAddr::V4(ip)) => {
@@ -74,28 +60,22 @@ impl IpPrefix {
     }
 }
 
-/// Named group of IP addresses and CIDR prefixes.
 #[derive(Clone, Debug, Default)]
 pub struct IpGroup {
-    /// Exact IP addresses in this group.
     pub ips: Vec<IpAddr>,
-    /// CIDR prefixes in this group.
     pub prefixes: Vec<IpPrefix>,
 }
 
 impl IpGroup {
-    /// Create a new empty group.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Add an exact IP address.
     pub fn add_ip(mut self, ip: IpAddr) -> Self {
         self.ips.push(ip);
         self
     }
 
-    /// Add a CIDR prefix.
     pub fn add_prefix(mut self, prefix: IpPrefix) -> Self {
         self.prefixes.push(prefix);
         self
@@ -107,40 +87,23 @@ impl IpGroup {
     }
 }
 
-/// The action to take for a matched routing rule.
 #[derive(Clone)]
 pub enum RouteAction {
-    /// Forward the connection to the given backend address.
     Forward(SocketAddr),
-    /// Forward the connection to a load-balanced backend pool.
     Pool(Arc<BackendPool>),
-    /// Drop / reject the connection.
     Reject,
 }
 
-/// A single routing rule.
-///
-/// All populated match criteria must be satisfied simultaneously (AND logic).
-/// `None` / empty means "match any".
 #[derive(Clone, Debug)]
 pub struct RoutingRule {
-    /// Human-readable name for logging/debugging.
     pub name: String,
-    /// Match connections whose source IP is in this named group.
-    /// `None` = match any IP.
     pub source_group: Option<String>,
-    /// Match connections whose source IP is one of these exact addresses.
-    /// Empty = match any IP (unless source_group is also set).
     pub source_ips: Vec<IpAddr>,
-    /// Match connections whose source port is within this inclusive range.
-    /// `None` = match any port.
     pub source_port_range: Option<(u16, u16)>,
-    /// The action to take when all criteria are satisfied.
     pub action: RouteAction,
 }
 
 impl RoutingRule {
-    /// Builder.
     pub fn new(name: impl Into<String>, action: RouteAction) -> Self {
         Self {
             name: name.into(),
@@ -151,36 +114,30 @@ impl RoutingRule {
         }
     }
 
-    /// Restrict to connections from the named IP group.
     pub fn from_group(mut self, group: impl Into<String>) -> Self {
         self.source_group = Some(group.into());
         self
     }
 
-    /// Restrict to connections from exact source IPs.
     pub fn from_ips(mut self, ips: impl IntoIterator<Item = IpAddr>) -> Self {
         self.source_ips.extend(ips);
         self
     }
 
-    /// Restrict to connections from this exact source IP.
     pub fn from_ip(mut self, ip: IpAddr) -> Self {
         self.source_ips.push(ip);
         self
     }
 
-    /// Restrict to connections from this source port range (inclusive).
     pub fn from_port_range(mut self, start: u16, end: u16) -> Self {
         self.source_port_range = Some((start, end));
         self
     }
 
-    /// Restrict to this exact source port.
     pub fn from_port(self, port: u16) -> Self {
         self.from_port_range(port, port)
     }
 
-    /// Evaluate whether this rule matches a peer.
     fn matches(&self, peer: SocketAddr, groups: &HashMap<String, IpGroup>) -> bool {
         let peer_ip = peer.ip();
         let peer_port = peer.port();
@@ -210,10 +167,7 @@ impl RoutingRule {
     }
 }
 
-/// Ordered, lock-free readable routing table.
-///
-/// Rules are evaluated top to bottom; the first match wins.
-/// If no rule matches the `default_action` is used.
+/// Rules evaluated top-to-bottom; first match wins, otherwise `default_action`.
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
     inner: Arc<RwLock<RoutingTableInner>>,
@@ -227,7 +181,6 @@ struct RoutingTableInner {
 }
 
 impl RoutingTable {
-    /// Create with a default action applied when no rule matches.
     pub fn new(default_action: RouteAction) -> Self {
         Self {
             inner: Arc::new(RwLock::new(RoutingTableInner {
@@ -238,35 +191,30 @@ impl RoutingTable {
         }
     }
 
-    /// Register a named IP group.
     pub fn add_group(&self, name: impl Into<String>, group: IpGroup) {
         if let Ok(mut inner) = self.inner.write() {
             inner.groups.insert(name.into(), group);
         }
     }
 
-    /// Append a rule to the end of the table (lowest priority among existing rules).
     pub fn add_rule(&self, rule: RoutingRule) {
         if let Ok(mut inner) = self.inner.write() {
             inner.rules.push(rule);
         }
     }
 
-    /// Prepend a rule (highest priority among existing rules).
     pub fn prepend_rule(&self, rule: RoutingRule) {
         if let Ok(mut inner) = self.inner.write() {
             inner.rules.insert(0, rule);
         }
     }
 
-    /// Replace the default action at runtime.
     pub fn set_default(&self, action: RouteAction) {
         if let Ok(mut inner) = self.inner.write() {
             inner.default_action = action;
         }
     }
 
-    /// Resolve the routing action for an inbound peer address.
     pub fn resolve(&self, peer: SocketAddr) -> RouteAction {
         let inner = match self.inner.read() {
             Ok(g) => g,

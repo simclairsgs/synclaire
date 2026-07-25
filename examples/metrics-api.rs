@@ -1,15 +1,5 @@
-// Metrics API Usage Example
-// Demonstrates how to track connections using the MetricsCollector API.
-//
-// This example shows:
-// 1. Creating a metrics collector
-// 2. Recording different connection types (TCP, TLS, mTLS)
-// 3. Registering callbacks for periodic metrics
-// 4. Querying current metrics snapshot
-// 5. Tracking per-server and per-IP statistics
-//
-// Usage:
-//   cargo run --example metrics-api --features async
+// Metrics API — connection tracking, snapshots, callbacks.
+//   cargo run --example metrics-api
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
@@ -19,29 +9,21 @@ use synclaire::metrics::{MetricsCollector, MetricsCallback, ConnectionMetrics};
 fn main() {
     println!("=== Synclaire Metrics API Example ===\n");
 
-    // Create a metrics collector
     let metrics = Arc::new(MetricsCollector::new());
 
-    // Example 1: Record various connection types
     println!("1. Recording connections...");
     let client_ip_1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
     let client_ip_2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 101));
     let client_ip_3 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
 
-    // Server 1: API server - mixed connections
     metrics.record_tcp_connection(Some("api-server"), client_ip_1);
     metrics.record_tcp_connection(Some("api-server"), client_ip_2);
     metrics.record_tls_connection(Some("api-server"), client_ip_3);
-
-    // Server 2: Database server - TLS only
     metrics.record_tls_connection(Some("db-server"), client_ip_1);
     metrics.record_mtls_connection(Some("db-server"), client_ip_2);
-
-    // Record some failures
     metrics.record_failure(Some("api-server"), client_ip_1);
     metrics.record_failure(Some("db-server"), client_ip_3);
 
-    // Example 2: Get current snapshot and inspect
     println!("2. Getting metrics snapshot...");
     let snapshot = metrics.snapshot();
 
@@ -52,7 +34,6 @@ fn main() {
     println!("  Failed connections: {}", snapshot.failed_connections);
     println!("  Active connections: {}", snapshot.active_connections);
 
-    // Example 3: Per-server metrics
     println!("\nPer-Server Metrics:");
     for (server_name, server_metrics) in &snapshot.per_server {
         println!("  Server '{}' :", server_name);
@@ -60,7 +41,6 @@ fn main() {
         println!("    Active: {}, Failures: {}", server_metrics.active, server_metrics.failures);
     }
 
-    // Example 4: Per-IP metrics
     println!("\nPer-IP Metrics:");
     for (ip, ip_metrics) in &snapshot.per_ip {
         println!("  IP {} :", ip);
@@ -68,10 +48,8 @@ fn main() {
                  ip_metrics.connections, ip_metrics.active, ip_metrics.failures);
     }
 
-    // Example 5: Register and use callbacks
     println!("\n3. Registering metrics callback...");
 
-    // Create a custom callback that logs metrics every report
     struct PeriodicLogger {
         name: String,
     }
@@ -95,11 +73,9 @@ fn main() {
     });
     metrics.register_callback(callback);
 
-    // Trigger the callback
     println!("\n4. Triggering callbacks...");
     metrics.trigger_callbacks();
 
-    // Example 6: Simulate connection lifecycle
     println!("\n5. Simulating connection lifecycle...");
     let sim_ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
 
@@ -120,7 +96,6 @@ fn main() {
         println!("  web-server active: {}", web_server.active);
     }
 
-    // Example 7: Real-time monitoring simulation
     println!("\n6. Simulating real-time metrics (5 events)...");
     let metrics_clone = Arc::clone(&metrics);
 
@@ -151,10 +126,8 @@ fn main() {
         }
     });
 
-    // Wait for monitoring thread
     std::thread::sleep(Duration::from_secs(3));
 
-    // Final snapshot
     println!("\n7. Final metrics snapshot:");
     let final_snapshot = metrics.snapshot();
     println!("Total connections: TCP={}, TLS={}, mTLS={}, Failed={}",

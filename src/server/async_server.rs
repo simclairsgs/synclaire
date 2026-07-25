@@ -10,9 +10,11 @@ use crate::{
     config::{AcceptMode, ServerConfig},
     guard::GuardContext,
     handler::{attach_guard_session, AsyncStream, Connection, ConnectionHandler},
-    server::{build_guard_stack, tcp, tls},
+    server::{build_guard_stack, tcp},
     SynError,
 };
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+use crate::server::tls;
 
 #[derive(Clone, Debug)]
 pub struct AsyncServerShutdown {
@@ -53,11 +55,6 @@ where
         }
     }
 
-    /// Create a server from an already-bound [`TcpListener`].
-    ///
-    /// The listener's actual local address is used instead of `config.bind_addr`,
-    /// which lets callers bind to port `0` and discover the assigned port before
-    /// starting the server.
     pub fn from_listener(listener: TcpListener, config: ServerConfig, handler: H) -> Self {
         let guards = build_guard_stack(&config.guards);
         Self {
@@ -127,11 +124,20 @@ where
 
             let handler = Arc::clone(&self.handler);
             let config = self.config.clone();
+            let timeout = config.connection_timeout;
 
             tokio::spawn(async move {
-                let result = handle_async_connection(stream, context, guard_session, config, handler).await;
-                if let Err(error) = result {
-                    log::error!("[{}] connection closed with error: {}", peer_addr, error);
+                match tokio::time::timeout(
+                    timeout,
+                    handle_async_connection(stream, context.clone(), guard_session, config, handler),
+                ).await {
+                    Ok(Err(error)) => {
+                        log::error!("[{}] connection closed with error: {}", peer_addr, error);
+                    }
+                    Err(_) => {
+                        log::debug!("[{}] connection timed out after {:?}", peer_addr, timeout);
+                    }
+                    Ok(Ok(())) => {}
                 }
                 drop(permit);
             });
@@ -171,18 +177,30 @@ where
 
     let (async_stream, is_tls) = match effective_mode {
         AcceptMode::Tls => {
-            let s = tls::accept_async(stream, &config.tls).await?;
-            (AsyncStream::ServerTls(s), true)
-        }
-        AcceptMode::Mixed => {
-            // TLS ClientHello record type byte is 0x16
-            // TODO: benchmark whether a one-byte peek adds measurable latency
-            if peek_is_tls(&stream).await {
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+            {
                 let s = tls::accept_async(stream, &config.tls).await?;
                 (AsyncStream::ServerTls(s), true)
-            } else {
-                (AsyncStream::Tcp(stream), false)
             }
+            #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+            return Err(SynError::UnsupportedFeature(
+                "TLS requires the rustls-backend or aws-lc-backend feature",
+            ));
+        }
+        AcceptMode::Mixed => {
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+            {
+                if peek_is_tls(&stream).await {
+                    let s = tls::accept_async(stream, &config.tls).await?;
+                    (AsyncStream::ServerTls(s), true)
+                } else {
+                    (AsyncStream::Tcp(stream), false)
+                }
+            }
+            #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+            return Err(SynError::UnsupportedFeature(
+                "Mixed mode requires the rustls-backend or aws-lc-backend feature",
+            ));
         }
         AcceptMode::Tcp => (AsyncStream::Tcp(stream), false),
     };
@@ -196,18 +214,10 @@ where
     guard_session.mark_established()?;
     let connection = attach_guard_session(connection, guard_session);
 
-    let timeout = config.connection_timeout;
-    match tokio::time::timeout(timeout, handler.handle(connection)).await {
-        Ok(result) => result,
-        Err(_) => {
-            log::debug!("[{}] connection timed out after {:?}", context.peer_addr, timeout);
-            Ok(())
-        }
-    }
+    handler.handle(connection).await
 }
 
-/// Peek at the first byte to decide if this is a TLS ClientHello.
-/// Returns `true` when the byte is 0x16 (TLS Handshake record type).
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
 async fn peek_is_tls(stream: &tokio::net::TcpStream) -> bool {
     let mut buf = [0u8; 1];
     matches!(stream.peek(&mut buf).await, Ok(1) if buf[0] == 0x16)

@@ -4,7 +4,6 @@ use parking_lot::Mutex;
 
 use crate::{guard::{Guard, GuardContext}, SynError};
 
-/// Configuration for the IP ban guard.
 #[derive(Clone, Debug, Default)]
 pub struct IpBanConfig {}
 

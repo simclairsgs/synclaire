@@ -12,7 +12,6 @@ use crate::{guard::{Guard, GuardContext}, SynError};
 pub struct SlowLorisConfig {
     pub idle_timeout: Duration,
     pub grace_period: Duration,
-    /// Maximum number of distinct connections tracked for idle detection.
     pub max_tracked_connections: usize,
 }
 

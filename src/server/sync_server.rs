@@ -10,12 +10,14 @@ use std::{
 use log::info;
 
 use crate::{
-    config::ServerConfig,
+    config::{AcceptMode, ServerConfig},
     guard::GuardContext,
     handler::{attach_guard_session, Connection, SyncConnectionHandler},
-    server::{build_guard_stack, tcp, tls},
+    server::{build_guard_stack, tcp},
     SynError,
 };
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+use crate::server::tls;
 
 #[derive(Clone, Debug)]
 pub struct SyncServerShutdown {
@@ -121,11 +123,6 @@ where
         }
     }
 
-    /// Create a server from an already-bound [`std::net::TcpListener`].
-    ///
-    /// The listener's actual local address is used instead of `config.bind_addr`,
-    /// which lets callers bind to port `0` and discover the assigned port before
-    /// starting the server.
     pub fn from_listener(listener: std::net::TcpListener, config: ServerConfig, handler: H) -> Self {
         let guards = build_guard_stack(&config.guards);
         let pool = ThreadPool::new(config.worker_threads);
@@ -192,7 +189,8 @@ where
             }
 
             let local_addr = stream.local_addr().ok();
-            let context = GuardContext::new(peer_addr, local_addr, config.tls.enabled);
+            let is_tls_expected = config.tls.enabled || config.accept_mode == AcceptMode::Tls;
+            let context = GuardContext::new(peer_addr, local_addr, is_tls_expected);
 
             if let Err(error) = self.pool.execute(Box::new(move || {
                 let result = handle_sync_connection(stream, context, guards, config, handler);
@@ -232,18 +230,64 @@ where
 
     let guard_session = guards.reserve(context.clone())?;
 
-    let connection = if config.tls.enabled {
-        let tls_stream = tls::accept_sync(stream, &config.tls)?;
-        let mut metadata = tcp::metadata(context.peer_addr, context.local_addr, true);
-        metadata.tls_server_name = config.tls.server_name.clone();
-        Connection::from_sync_server_tls(metadata, tls_stream)
+    let effective_mode = if config.accept_mode == AcceptMode::Mixed {
+        AcceptMode::Mixed
+    } else if config.tls.enabled || config.accept_mode == AcceptMode::Tls {
+        AcceptMode::Tls
     } else {
-        let metadata = tcp::metadata(context.peer_addr, context.local_addr, false);
-        Connection::from_sync_tcp(metadata, stream)
+        AcceptMode::Tcp
+    };
+
+    let connection = match effective_mode {
+        AcceptMode::Tls => {
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+            {
+                let tls_stream = tls::accept_sync(stream, &config.tls)?;
+                let mut metadata = tcp::metadata(context.peer_addr, context.local_addr, true);
+                metadata.tls_server_name = config.tls.server_name.clone();
+                Connection::from_sync_server_tls(metadata, tls_stream)
+            }
+            #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+            return Err(SynError::UnsupportedFeature(
+                "TLS requires the rustls-backend or aws-lc-backend feature",
+            ));
+        }
+        AcceptMode::Mixed => {
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+            {
+                if peek_is_tls(&stream)? {
+                    let tls_stream = tls::accept_sync(stream, &config.tls)?;
+                    let mut metadata = tcp::metadata(context.peer_addr, context.local_addr, true);
+                    metadata.tls_server_name = config.tls.server_name.clone();
+                    Connection::from_sync_server_tls(metadata, tls_stream)
+                } else {
+                    let metadata = tcp::metadata(context.peer_addr, context.local_addr, false);
+                    Connection::from_sync_tcp(metadata, stream)
+                }
+            }
+            #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+            return Err(SynError::UnsupportedFeature(
+                "Mixed mode requires the rustls-backend or aws-lc-backend feature",
+            ));
+        }
+        AcceptMode::Tcp => {
+            let metadata = tcp::metadata(context.peer_addr, context.local_addr, false);
+            Connection::from_sync_tcp(metadata, stream)
+        }
     };
 
     guard_session.mark_established()?;
     let connection = attach_guard_session(connection, guard_session);
 
     handler.handle(connection)
+}
+
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+fn peek_is_tls(stream: &std::net::TcpStream) -> Result<bool, SynError> {
+    let mut buf = [0u8; 1];
+    match stream.peek(&mut buf) {
+        Ok(1) => Ok(buf[0] == 0x16),
+        Ok(_) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
 }

@@ -1,51 +1,27 @@
-// Load balancer module.
-//
-// Provides BackendPool: a thread-safe pool of backend SocketAddrs that
-// selects one per connection using either:
-//
-// - RoundRobin: strict cyclic rotation with an atomic counter.
-// - ConsistentHash: weighted ring based on FNV-1a hashing for sticky routing.
-//   The ring key can be the client IP only (IP-sticky) or IP+port (per-flow-sticky).
-//
-// No external crates are required.  The consistent-hash ring is a sorted Vec of
-// (u64 hash, backend_index) pairs built once at construction and rebuilt on pool
-// modification.
-
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use parking_lot::RwLock;
 
-/// How the ring key is derived from the client address.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum StickyKey {
-    /// Hash on client IP address only (all ports from same IP land on same backend).
     #[default]
     Ip,
-    /// Hash on client IP + port (each flow from the same IP can land on different backends).
     IpPort,
 }
 
-/// Load-balancing strategy used by `BackendPool`.
 #[derive(Clone, Debug)]
 pub enum LoadBalancerStrategy {
-    /// Cyclic round-robin across all healthy backends.
     RoundRobin,
-    /// Weighted consistent hashing for sticky routing.
     ConsistentHash {
-        /// Number of virtual nodes per backend in the ring (higher = better distribution).
         replicas: u32,
-        /// Which part of the client address to hash.
         sticky: StickyKey,
     },
 }
 
-/// A single backend with an optional weight.
 #[derive(Clone, Debug)]
 pub struct Backend {
     pub addr: SocketAddr,
-    /// Relative weight used only by `ConsistentHash` (how many virtual nodes).
-    /// Defaults to 1.
     pub weight: u32,
 }
 
@@ -131,9 +107,6 @@ impl PoolInner {
     }
 }
 
-/// Thread-safe pool of backend addresses.
-///
-/// Clone is cheap (Arc-backed).
 #[derive(Clone, Debug)]
 pub struct BackendPool {
     inner: Arc<RwLock<PoolInner>>,
@@ -141,7 +114,6 @@ pub struct BackendPool {
 }
 
 impl BackendPool {
-    /// Create a round-robin pool from a list of backends.
     pub fn round_robin(backends: impl IntoIterator<Item = impl Into<Backend>>) -> Self {
         let counter = Arc::new(AtomicUsize::new(0));
         let inner = PoolInner {
@@ -155,9 +127,6 @@ impl BackendPool {
         }
     }
 
-    /// Create a consistent-hash pool.
-    ///
-    /// `replicas` is the number of virtual nodes per backend (default 150 is a good start).
     pub fn consistent_hash(
         backends: impl IntoIterator<Item = impl Into<Backend>>,
         replicas: u32,
@@ -179,14 +148,12 @@ impl BackendPool {
         }
     }
 
-    /// Add a backend to the pool.
     pub fn add_backend(&self, backend: impl Into<Backend>) {
         let mut inner = self.inner.write();
         inner.backends.push(backend.into());
         inner.rebuild_ring();
     }
 
-    /// Remove a backend by address.  Returns `true` if it was found and removed.
     pub fn remove_backend(&self, addr: &SocketAddr) -> bool {
         let mut inner = self.inner.write();
         let before = inner.backends.len();
@@ -198,12 +165,10 @@ impl BackendPool {
         removed
     }
 
-    /// List all current backend addresses.
     pub fn backends(&self) -> Vec<SocketAddr> {
         self.inner.read().backends.iter().map(|b| b.addr).collect()
     }
 
-    /// Number of backends in the pool.
     pub fn len(&self) -> usize {
         self.inner.read().backends.len()
     }
@@ -212,9 +177,6 @@ impl BackendPool {
         self.len() == 0
     }
 
-    /// Select a backend for the given peer address.
-    ///
-    /// Returns `None` if the pool is empty.
     #[must_use]
     pub fn select(&self, peer: SocketAddr) -> Option<SocketAddr> {
         let inner = self.inner.read();

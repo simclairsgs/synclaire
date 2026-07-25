@@ -1,38 +1,31 @@
-//! TLS echo server.
-//!
-//! This example demonstrates three configurations:
-//!   - `AcceptMode::Tls`   — TLS only (default here).
-//!   - `AcceptMode::Mixed` — auto-detect per connection (uncomment to try it).
-//!
-//! Generate self-signed certs for testing:
-//!   openssl req -x509 -newkey rsa:4096 -keyout examples/certs/server.key \
-//!               -out examples/certs/server.crt -days 365 -nodes -subj '/CN=localhost'
+// TLS echo server with ALPN inspection.
+//   cd examples && sh generate-certs.sh && cd ..
+//   cargo run --example tls-server
 
+use synclaire::{PemSource, ServerConfig, SynError, TlsConfig};
+
+#[cfg(feature = "async")]
 use std::time::Duration;
-
-use synclaire::{
-    handler::ConnectionHandler, AcceptMode, AsyncServer, PemSource, ServerConfig,
-    SynError, TlsConfig,
-};
+#[cfg(feature = "async")]
+use synclaire::{handler::ConnectionHandler, AcceptMode, AsyncServer};
+#[cfg(feature = "async")]
 use tracing_subscriber::EnvFilter;
 
 struct TlsEchoHandler;
 
+#[cfg(feature = "async")]
 impl ConnectionHandler for TlsEchoHandler {
     fn handle<'a>(&'a self, mut connection: synclaire::Connection) -> synclaire::handler::HandlerFuture<'a> {
         Box::pin(async move {
             let peer = connection.peer_addr();
 
-            // is_tls() works regardless of AcceptMode — it reflects what actually happened.
             if connection.is_tls() {
-                // Get the concrete server-side TLS stream — includes the rustls session.
                 if let Some(tls_stream) = connection.async_stream().expect("async connection").as_server_tls() {
                     let (_, session) = tls_stream.get_ref();
                     let protocol = session.alpn_protocol().map(String::from_utf8_lossy);
                     log::info!("TLS handshake complete peer={} alpn={:?}", peer, protocol);
                 }
             } else {
-                // In Mixed mode this branch serves plain TCP clients.
                 log::info!("plain TCP connection on mixed-mode server peer={}", peer);
             }
 
@@ -73,7 +66,6 @@ async fn main() -> Result<(), SynError> {
         .name("tls-echo-server")
         .connection_timeout(Duration::from_secs(60))
         .tls(tls)
-        // Switch to AcceptMode::Mixed to also accept plain TCP on the same port:
         .accept_mode(AcceptMode::Tls)
         .build();
 

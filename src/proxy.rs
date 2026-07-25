@@ -1,12 +1,3 @@
-// TCP proxy module for forwarding connections.
-//
-// Provides:
-// - TcpProxy: per-connection forwarding engine
-// - ProxyServer: sync proxy listener with guard stack, routing, and metrics
-// - AsyncProxyServer: async variant with TLS offload, routing, and metrics
-// - ProxyClient: sync client helper that sends proxy auth preface
-// - ProxyAuthHandle: runtime-updatable credentials
-
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
@@ -20,22 +11,17 @@ use crate::guard::GuardContext;
 use crate::server::build_guard_stack;
 use crate::SynError;
 
-/// Authentication configuration for the proxy.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProxyAuth {
-    /// No authentication required.
     None,
-    /// Basic HTTP authentication (username:password).
     Basic(String, String),
 }
 
 impl ProxyAuth {
-    /// Create basic auth with username and password.
     pub fn basic(username: &str, password: &str) -> Self {
         Self::Basic(username.to_string(), password.to_string())
     }
 
-    /// Validate authentication credentials.
     pub fn validate(&self, username: &str, password: &str) -> bool {
         match self {
             ProxyAuth::None => true,
@@ -43,7 +29,6 @@ impl ProxyAuth {
         }
     }
 
-    /// Encode credentials for basic auth header.
     pub fn encode_header(&self) -> Option<String> {
         match self {
             ProxyAuth::None => None,
@@ -55,7 +40,6 @@ impl ProxyAuth {
         }
     }
 
-    /// Parse and validate HTTP Authorization header.
     pub fn validate_header(&self, header: &str) -> bool {
         if let ProxyAuth::Basic(expected_user, expected_pass) = self {
             if let Some(payload) = header.strip_prefix("Basic ") {
@@ -72,21 +56,18 @@ impl ProxyAuth {
     }
 }
 
-/// Shared, runtime-updatable authentication handle.
 #[derive(Clone, Debug)]
 pub struct ProxyAuthHandle {
     inner: Arc<RwLock<ProxyAuth>>,
 }
 
 impl ProxyAuthHandle {
-    /// Create a new shared auth handle.
     pub fn new(initial: ProxyAuth) -> Self {
         Self {
             inner: Arc::new(RwLock::new(initial)),
         }
     }
 
-    /// Snapshot the current authentication state.
     pub fn current(&self) -> Result<ProxyAuth, SynError> {
         self.inner
             .read()
@@ -94,7 +75,6 @@ impl ProxyAuthHandle {
             .map_err(|_| SynError::runtime("proxy auth lock poisoned"))
     }
 
-    /// Replace the current auth strategy.
     pub fn set(&self, auth: ProxyAuth) -> Result<(), SynError> {
         self.inner
             .write()
@@ -104,46 +84,36 @@ impl ProxyAuthHandle {
             .map_err(|_| SynError::runtime("proxy auth lock poisoned"))
     }
 
-    /// Switch to no-auth mode.
     pub fn set_none(&self) -> Result<(), SynError> {
         self.set(ProxyAuth::None)
     }
 
-    /// Switch to basic-auth mode.
     pub fn set_basic(&self, username: &str, password: &str) -> Result<(), SynError> {
         self.set(ProxyAuth::basic(username, password))
     }
 }
 
-/// TCP proxy configuration.
 #[derive(Clone, Debug)]
 pub struct ProxyConfig {
-    /// Address to listen on.
     pub listen_addr: SocketAddr,
-    /// Default backend server address to forward to (used when no pool or routing table is set).
     pub backend_addr: SocketAddr,
-    /// Authentication configuration.
     pub auth: ProxyAuth,
-    /// Buffer size for forwarding (default 8KB).
     pub buffer_size: usize,
-    /// Optional guard stack configuration for the proxy server.
+    pub connection_timeout: std::time::Duration,
     pub guards: GuardStackConfig,
-    /// Optional TLS offload server settings.
     pub tls_offload: Option<TlsConfig>,
-    /// Optional routing table (overrides backend_addr when set; Pool actions beat backend_pool).
     pub routing: Option<Arc<RoutingTable>>,
-    /// Optional load-balancer pool for direct (non-routed) connections.
     pub backend_pool: Option<Arc<BackendPool>>,
 }
 
 impl ProxyConfig {
-    /// Create a new proxy configuration.
     pub fn new(listen_addr: SocketAddr, backend_addr: SocketAddr) -> Self {
         Self {
             listen_addr,
             backend_addr,
             auth: ProxyAuth::None,
             buffer_size: 8192,
+            connection_timeout: std::time::Duration::from_secs(30),
             guards: GuardStackConfig::default(),
             tls_offload: None,
             routing: None,
@@ -151,49 +121,43 @@ impl ProxyConfig {
         }
     }
 
-    /// Set authentication for the proxy.
+    pub fn with_connection_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.connection_timeout = timeout;
+        self
+    }
+
     pub fn with_auth(mut self, auth: ProxyAuth) -> Self {
         self.auth = auth;
         self
     }
 
-    /// Set buffer size for forwarding.
     pub fn with_buffer_size(mut self, size: usize) -> Self {
         self.buffer_size = size;
         self
     }
 
-    /// Attach guard configuration for ProxyServer.
     pub fn with_guards(mut self, guards: GuardStackConfig) -> Self {
         self.guards = guards;
         self
     }
 
-    /// Enable TLS offload configuration for incoming proxy connections.
-    ///
-    /// Note: Sync ProxyServer currently validates this option and returns
-    /// `UnsupportedFeature` when enabled. The field exists so apps can share
-    /// config between sync and future async offload runtimes.
+    /// Async only — sync proxy rejects this with `UnsupportedFeature`.
     pub fn with_tls_offload(mut self, tls: TlsConfig) -> Self {
         self.tls_offload = Some(tls);
         self
     }
 
-    /// Attach a routing table that overrides `backend_addr` per-connection.
     pub fn with_routing(mut self, routing: Arc<RoutingTable>) -> Self {
         self.routing = Some(routing);
         self
     }
 
-    /// Attach a load-balancer backend pool for direct (non-routed) connections.
-    /// Ignored when a routing table is also set and the matched rule is `Forward` or `Pool`.
     pub fn with_backend_pool(mut self, pool: Arc<BackendPool>) -> Self {
         self.backend_pool = Some(pool);
         self
     }
 }
 
-/// Parse HTTP proxy auth headers from a raw byte slice, return trailing payload.
 fn parse_http_auth_from_bytes(data: &[u8], auth: &ProxyAuth) -> Result<Vec<u8>, SynError> {
     let header_end = data
         .windows(4)
@@ -217,7 +181,6 @@ fn parse_http_auth_from_bytes(data: &[u8], auth: &ProxyAuth) -> Result<Vec<u8>, 
     Err(SynError::authentication_error("Authorization required"))
 }
 
-/// TCP proxy connection handler.
 #[derive(Clone, Debug)]
 pub struct TcpProxy {
     config: ProxyConfig,
@@ -225,7 +188,6 @@ pub struct TcpProxy {
 }
 
 impl TcpProxy {
-    /// Create a new TCP proxy forwarding engine.
     pub fn new(config: ProxyConfig) -> Self {
         Self {
             config,
@@ -233,7 +195,6 @@ impl TcpProxy {
         }
     }
 
-    /// Attach a dynamic auth handle for runtime credential updates.
     pub fn with_auth_handle(mut self, auth_handle: ProxyAuthHandle) -> Self {
         self.auth_handle = Some(auth_handle);
         self
@@ -246,19 +207,17 @@ impl TcpProxy {
         }
     }
 
-    /// Forward a client connection to the backend server.
     pub fn forward(&self, client: TcpStream) -> Result<(), SynError> {
         self.forward_to(client, None)
     }
 
-    /// Forward with an explicit backend address (used by ProxyServer routing).
     pub fn forward_to(&self, mut client: TcpStream, override_backend: Option<SocketAddr>) -> Result<(), SynError> {
+        let timeout = self.config.connection_timeout;
+        client.set_read_timeout(Some(timeout)).ok();
+        client.set_write_timeout(Some(timeout)).ok();
+
         let effective_auth = self.effective_auth()?;
 
-        // Validate auth and capture any payload bytes that arrived after the
-        // \r\n\r\n header terminator. These would be silently lost if we used
-        // a BufReader, because BufReader buffers ahead and those bytes never
-        // reach the original TcpStream.
         let trailing_payload = if matches!(effective_auth, ProxyAuth::Basic(_, _)) {
             self.validate_http_auth_stream(&mut client, &effective_auth)?
         } else {
@@ -266,8 +225,10 @@ impl TcpProxy {
         };
 
         let backend_addr = override_backend.unwrap_or(self.config.backend_addr);
-        let mut backend = TcpStream::connect(backend_addr)
+        let mut backend = TcpStream::connect_timeout(&backend_addr.into(), timeout)
             .map_err(|e| SynError::connection_error(e.to_string()))?;
+        backend.set_read_timeout(Some(timeout)).ok();
+        backend.set_write_timeout(Some(timeout)).ok();
 
         // Write any payload the client sent immediately after the CONNECT
         // headers before handing off to bidirectional forwarding.
@@ -280,9 +241,6 @@ impl TcpProxy {
         self.forward_bidirectional(&client, &backend)
     }
 
-    /// Read HTTP proxy auth headers directly from the stream without BufReader,
-    /// returning any bytes that arrived after the \r\n\r\n terminator so they
-    /// are not silently dropped before backend forwarding begins.
     fn validate_http_auth_stream(&self, client: &mut TcpStream, auth: &ProxyAuth) -> Result<Vec<u8>, SynError> {
         let mut data = Vec::with_capacity(1024);
         let mut chunk = [0u8; 512];
@@ -310,7 +268,6 @@ impl TcpProxy {
         parse_http_auth_from_bytes(&data, auth)
     }
 
-    /// Forward data bidirectionally between client and backend.
     fn forward_bidirectional(&self, client: &TcpStream, backend: &TcpStream) -> Result<(), SynError> {
         use std::thread;
 
@@ -368,7 +325,6 @@ impl TcpProxy {
     }
 }
 
-/// Sync proxy server runner.
 pub struct ProxyServer {
     config: ProxyConfig,
     auth_handle: Option<ProxyAuthHandle>,
@@ -376,7 +332,6 @@ pub struct ProxyServer {
 }
 
 impl ProxyServer {
-    /// Create a new proxy server.
     pub fn new(config: ProxyConfig) -> Self {
         Self {
             config,
@@ -385,24 +340,20 @@ impl ProxyServer {
         }
     }
 
-    /// Attach dynamic auth handle for runtime credential updates.
     pub fn with_auth_handle(mut self, auth_handle: ProxyAuthHandle) -> Self {
         self.auth_handle = Some(auth_handle);
         self
     }
 
-    /// Attach a metrics collector.
     pub fn with_metrics(mut self, metrics: Arc<MetricsCollector>) -> Self {
         self.metrics = Some(metrics);
         self
     }
 
-    /// Get a clone of the auth handle when configured.
     pub fn auth_handle(&self) -> Option<ProxyAuthHandle> {
         self.auth_handle.clone()
     }
 
-    /// Run the proxy server loop.
     pub fn run(&self) -> Result<(), SynError> {
         if self.config.tls_offload.as_ref().is_some_and(|tls| tls.enabled) {
             return Err(SynError::UnsupportedFeature(
@@ -517,7 +468,6 @@ impl ProxyServer {
     }
 }
 
-/// Async proxy server runner with optional TLS offload.
 #[cfg(feature = "async")]
 pub struct AsyncProxyServer {
     config: ProxyConfig,
@@ -527,7 +477,6 @@ pub struct AsyncProxyServer {
 
 #[cfg(feature = "async")]
 impl AsyncProxyServer {
-    /// Create a new async proxy server.
     pub fn new(config: ProxyConfig) -> Self {
         Self {
             config,
@@ -536,19 +485,16 @@ impl AsyncProxyServer {
         }
     }
 
-    /// Attach dynamic auth handle for runtime credential updates.
     pub fn with_auth_handle(mut self, auth_handle: ProxyAuthHandle) -> Self {
         self.auth_handle = Some(auth_handle);
         self
     }
 
-    /// Attach a metrics collector.
     pub fn with_metrics(mut self, metrics: Arc<MetricsCollector>) -> Self {
         self.metrics = Some(metrics);
         self
     }
 
-    /// Run the async proxy loop.
     pub async fn run(&self) -> Result<(), SynError> {
         use tokio::net::TcpListener;
 
@@ -630,12 +576,22 @@ impl AsyncProxyServer {
             }
 
             let config = self.config.clone();
+            let timeout = config.connection_timeout;
             let auth_handle = self.auth_handle.clone();
             let metrics = self.metrics.clone();
 
             tokio::spawn(async move {
-                if let Err(error) = forward_async_connection(stream, config, auth_handle, backend_override).await {
-                    log::warn!("[{}] async proxy forwarding error: {}", peer_addr, error);
+                match tokio::time::timeout(
+                    timeout,
+                    forward_async_connection(stream, config, auth_handle, backend_override),
+                ).await {
+                    Ok(Err(error)) => {
+                        log::warn!("[{}] async proxy forwarding error: {}", peer_addr, error);
+                    }
+                    Err(_) => {
+                        log::debug!("[{}] async proxy connection timed out after {:?}", peer_addr, timeout);
+                    }
+                    Ok(Ok(())) => {}
                 }
                 if let Some(m) = metrics {
                     m.record_connection_close(Some("async-proxy"), peer_addr.ip());
@@ -714,13 +670,19 @@ async fn forward_async_connection(
 
     let auth = resolve_auth(&config.auth, &auth_handle)?;
     let backend_addr = backend_override.unwrap_or(config.backend_addr);
-    let mut backend = tokio::net::TcpStream::connect(backend_addr)
+    let mut backend = tokio::time::timeout(
+        config.connection_timeout,
+        tokio::net::TcpStream::connect(backend_addr),
+    )
         .await
+        .map_err(|_| SynError::connection_error(format!(
+            "backend connect to {} timed out after {:?}", backend_addr, config.connection_timeout
+        )))?
         .map_err(|e| SynError::connection_error(e.to_string()))?;
 
     if let Some(tls) = &config.tls_offload {
         if tls.enabled {
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             {
                 let acceptor = crate::tls::async_server_acceptor(tls)?;
                 let mut client = acceptor
@@ -742,11 +704,11 @@ async fn forward_async_connection(
                 return Ok(());
             }
 
-            #[cfg(not(feature = "rustls-backend"))]
+            #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
             {
                 let _ = stream;
                 return Err(SynError::UnsupportedFeature(
-                    "proxy TLS offload requires rustls-backend feature",
+                    "proxy TLS offload requires rustls-backend or aws-lc-backend feature",
                 ));
             }
         }
@@ -767,7 +729,6 @@ async fn forward_async_connection(
     Ok(())
 }
 
-/// Sync proxy client helper.
 #[derive(Clone, Debug)]
 pub struct ProxyClient {
     proxy_addr: SocketAddr,
@@ -776,7 +737,6 @@ pub struct ProxyClient {
 }
 
 impl ProxyClient {
-    /// Create a new proxy client helper.
     pub fn new(proxy_addr: SocketAddr, backend_addr: SocketAddr) -> Self {
         Self {
             proxy_addr,
@@ -785,13 +745,11 @@ impl ProxyClient {
         }
     }
 
-    /// Set auth to match proxy server requirements.
     pub fn with_auth(mut self, auth: ProxyAuth) -> Self {
         self.auth = auth;
         self
     }
 
-    /// Connect to proxy and send optional auth preface.
     pub fn connect(&self) -> Result<TcpStream, SynError> {
         let mut stream = TcpStream::connect(self.proxy_addr)
             .map_err(|e| SynError::connection_error(e.to_string()))?;
@@ -809,7 +767,6 @@ impl ProxyClient {
         Ok(stream)
     }
 
-    /// Convenience helper for request/response payload exchange.
     pub fn send_and_receive(&self, payload: &[u8]) -> Result<Vec<u8>, SynError> {
         let mut stream = self.connect()?;
         stream

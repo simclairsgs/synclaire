@@ -1,22 +1,14 @@
-// TLS Client-Server Example (Synchronous)
-// This example demonstrates a synchronous TLS echo server and client.
-// The server uses TLS to encrypt all communication.
-//
-// Usage:
+// Sync TLS echo server + client.
+//   cd examples && sh generate-certs.sh && cd ..
 //   cargo run --example tls-client-server-sync --features sync
-//
-// Modes:
-//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
-//   server            — stand-alone server; prints the actual port so you can pass it to the client
-//   client <port>     — connects to the server on the given port
 
 use std::env;
-
 use std::io::{Read, Write};
+
 use synclaire::{
     config::{ClientConfig, ServerConfig, TlsConfig},
     handler::SyncConnectionHandler,
-    PemSource, SyncServer, SynError,
+    PemSource, SyncServer,
 };
 
 struct EchoHandler;
@@ -134,14 +126,12 @@ fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Duration;
 
     println!("Connecting to TLS Echo Server (Synchronous) on port {}...", port);
-
-    // Give server time to start
     thread::sleep(Duration::from_millis(100));
 
     let tls_config = TlsConfig::builder()
         .enabled(true)
         .server_name("localhost")
-        .trust_anchor(PemSource::file("examples/certs/server.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .build();
 
     let config = ClientConfig::builder()
@@ -149,17 +139,16 @@ fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .tls(tls_config)
         .build();
 
-    let mut conn = synclaire::SyncClient::new(config).connect()?;
+    let conn = synclaire::SyncClient::new(config).connect()?;
     println!("Connected via TLS to server: {}", conn.peer_addr());
 
+    let mut stream = conn.into_stream().into_sync().expect("sync stream");
     let message = b"Hello from TLS Sync Client!";
-    futures::executor::block_on(async {
-        conn.write_all(message).await?;
-        let mut buf = [0u8; 1024];
-        let n = conn.read(&mut buf).await?;
-        println!("Received (TLS): {}", String::from_utf8_lossy(&buf[..n]));
-        Ok::<(), SynError>(())
-    })?;
+    stream.write_all(message)?;
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf)?;
+    println!("Received (TLS): {}", String::from_utf8_lossy(&buf[..n]));
 
     Ok(())
 }

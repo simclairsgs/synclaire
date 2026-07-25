@@ -1,40 +1,23 @@
-// Metrics module for tracking connections and performance
-// 
-// Provides a metrics collection system with periodic callbacks for monitoring
-// TCP/TLS/mTLS connections, success/failure rates, latency, and per-entity tracking.
-
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use parking_lot::Mutex;
 
-/// Connection metrics snapshot
 #[derive(Clone, Debug)]
 pub struct ConnectionMetrics {
-    /// Total TCP connections established
     pub tcp_connections_total: u64,
-    /// Total TLS connections established
     pub tls_connections_total: u64,
-    /// Total mTLS connections established
     pub mtls_connections_total: u64,
-    /// Failed connection attempts
     pub failed_connections: u64,
-    /// Currently active connections
     pub active_connections: u64,
-    /// Average connection latency in milliseconds
     pub avg_latency_ms: f64,
-    /// Minimum latency observed (ms)
     pub min_latency_ms: u64,
-    /// Maximum latency observed (ms)
     pub max_latency_ms: u64,
-    /// Per-server connection counts
     pub per_server: HashMap<String, ServerMetrics>,
-    /// Per-IP connection counts
     pub per_ip: HashMap<IpAddr, IpMetrics>,
 }
 
-/// Per-server metrics
 #[derive(Clone, Debug)]
 pub struct ServerMetrics {
     pub tcp: u64,
@@ -46,7 +29,6 @@ pub struct ServerMetrics {
     pub latency_sample_count: u64, // For latency calculation
 }
 
-/// Per-IP metrics
 #[derive(Clone, Debug)]
 pub struct IpMetrics {
     pub connections: u64,
@@ -55,14 +37,10 @@ pub struct IpMetrics {
     pub avg_latency_ms: f64,
 }
 
-/// Callback trait for metrics collection
-/// Implement this trait to receive periodic metrics updates
 pub trait MetricsCallback: Send + Sync {
-    /// Called periodically with current metrics snapshot
     fn on_metrics(&self, metrics: &ConnectionMetrics);
 }
 
-/// Metrics collector for tracking connection activity
 pub struct MetricsCollector {
     tcp_total: Arc<AtomicU64>,
     tls_total: Arc<AtomicU64>,
@@ -99,7 +77,6 @@ struct PerIpMetrics {
 }
 
 impl MetricsCollector {
-    /// Create a new metrics collector
     pub fn new() -> Self {
         Self {
             tcp_total: Arc::new(AtomicU64::new(0)),
@@ -117,7 +94,6 @@ impl MetricsCollector {
         }
     }
 
-    /// Record a TCP connection
     pub fn record_tcp_connection(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         self.tcp_total.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
@@ -157,7 +133,6 @@ impl MetricsCollector {
             });
     }
 
-    /// Record a TLS connection
     pub fn record_tls_connection(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         self.tls_total.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
@@ -197,7 +172,6 @@ impl MetricsCollector {
             });
     }
 
-    /// Record an mTLS connection
     pub fn record_mtls_connection(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         self.mtls_total.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
@@ -237,7 +211,6 @@ impl MetricsCollector {
             });
     }
 
-    /// Record a connection failure
     pub fn record_failure(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         self.failed.fetch_add(1, Ordering::SeqCst);
 
@@ -270,7 +243,6 @@ impl MetricsCollector {
             });
     }
 
-    /// Record a connection closure
     pub fn record_connection_close(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         // Saturate at 0 to prevent wrapping on double-close.
         self.active.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
@@ -294,7 +266,6 @@ impl MetricsCollector {
         }
     }
 
-    /// Record connection latency in milliseconds
     pub fn record_connection_latency(&self, server_name: Option<&str>, peer_ip: IpAddr, latency_ms: u64) {
         // Update global latency metrics
         self.latency_sum_ms.fetch_add(latency_ms, Ordering::SeqCst);
@@ -333,12 +304,10 @@ impl MetricsCollector {
         }
     }
 
-    /// Register a metrics callback
     pub fn register_callback(&self, callback: Arc<dyn MetricsCallback>) {
         self.callbacks.lock().push(callback);
     }
 
-    /// Get current metrics snapshot
     pub fn snapshot(&self) -> ConnectionMetrics {
         let per_server = self.per_server.lock();
         let per_server_metrics = per_server
@@ -413,7 +382,6 @@ impl MetricsCollector {
         }
     }
 
-    /// Trigger metrics callbacks with current snapshot
     pub fn trigger_callbacks(&self) {
         let metrics = self.snapshot();
         let callbacks = self.callbacks.lock();
@@ -422,7 +390,6 @@ impl MetricsCollector {
         }
     }
 
-    /// Reset all metrics to zero
     pub fn reset(&self) {
         self.tcp_total.store(0, Ordering::SeqCst);
         self.tls_total.store(0, Ordering::SeqCst);
@@ -463,7 +430,6 @@ impl Default for MetricsCollector {
     }
 }
 
-/// Simple logging callback for metrics
 pub struct LoggingMetricsCallback;
 
 impl MetricsCallback for LoggingMetricsCallback {

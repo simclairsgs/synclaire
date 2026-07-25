@@ -1,14 +1,6 @@
-// Mutual TLS (mTLS) Client-Server Example (Asynchronous)
-// This example demonstrates asynchronous mTLS where both client and server authenticate each other.
-// Both client and server present certificates and verify the other's certificate.
-//
-// Usage:
-//   cargo run --example mtls-client-server-async --features async
-//
-// Modes:
-//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
-//   server            — stand-alone server; prints the actual port so you can pass it to the client
-//   client <port>     — connects to the server on the given port
+// Async mTLS echo server + client (mutual certificate verification).
+//   cd examples && sh generate-certs.sh && cd ..
+//   cargo run --example mtls-client-server-async
 
 use std::env;
 use synclaire::{
@@ -87,7 +79,7 @@ async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
         .enabled(true)
         .certificate_chain(PemSource::file("examples/certs/server.crt"))
         .private_key(PemSource::file("examples/certs/server.key"))
-        .trust_anchor(PemSource::file("examples/certs/client.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .require_client_auth(true)
         .build();
 
@@ -118,7 +110,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .enabled(true)
         .certificate_chain(PemSource::file("examples/certs/server.crt"))
         .private_key(PemSource::file("examples/certs/server.key"))
-        .trust_anchor(PemSource::file("examples/certs/client.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .require_client_auth(true)
         .build();
 
@@ -142,7 +134,7 @@ async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .server_name("localhost")
         .client_certificate_chain(PemSource::file("examples/certs/client.crt"))
         .client_private_key(PemSource::file("examples/certs/client.key"))
-        .trust_anchor(PemSource::file("examples/certs/server.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .build();
 
     let config = ClientConfig::builder()

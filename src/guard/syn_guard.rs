@@ -14,7 +14,6 @@ pub struct SynGuardConfig {
     pub max_half_open_global: usize,
     pub backlog_limit: usize,
     pub syn_timeout: Duration,
-    /// Maximum number of IPs tracked in the per-IP half-open map.
     pub max_tracked_ips: usize,
 }
 
@@ -36,7 +35,6 @@ struct HalfOpenState {
     per_ip: HashMap<IpAddr, usize>,
     ip_order: VecDeque<IpAddr>,
     started_at: HashMap<IpAddr, Instant>,
-    /// Connections that have passed on_established — used to avoid double-decrementing.
     established: HashSet<SocketAddr>,
 }
 

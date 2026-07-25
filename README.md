@@ -78,19 +78,36 @@ fn main() -> Result<(), SynError> {
 }
 ```
 
+## Graceful shutdown
+
+Both async and sync servers support graceful shutdown via a channel:
+
+```rust
+let (shutdown, signal) = AsyncServer::<Echo>::shutdown_channel();
+tokio::spawn(async move { server.run_until_shutdown(signal).await.ok(); });
+// later...
+shutdown.shutdown()?;
+```
+
+`SyncServer` has the same API (`shutdown_channel()` + `run_until_shutdown()`).
+
 ## Guard stack
 
 Built-in connection guards that run before your handler sees the connection. Stack them to create layered transport defense:
 
 ```rust
-use synclaire::config::GuardStackConfig;
+use synclaire::GuardStackConfig;
 use synclaire::guard::*;
 use std::time::Duration;
 
 let guards = GuardStackConfig {
     rate_limiter: Some(RateLimiterConfig {
-        max_per_ip: 100,
-        refill_interval: Duration::from_secs(1),
+        per_ip_capacity: 100,
+        per_ip_refill_per_second: 20,
+        global_capacity: 1_000,
+        global_refill_per_second: 200,
+        global_window: Duration::from_secs(10),
+        global_window_limit: 5_000,
         max_tracked_ips: 100_000,
     }),
     throttle: Some(ThrottleConfig {
@@ -99,21 +116,19 @@ let guards = GuardStackConfig {
     }),
     syn_guard: Some(SynGuardConfig {
         max_half_open_per_ip: 5,
-        max_half_open_total: 10_000,
+        max_half_open_global: 10_000,
+        backlog_limit: 1_024,
         syn_timeout: Duration::from_secs(5),
         max_tracked_ips: 100_000,
     }),
     slow_loris: Some(SlowLorisConfig {
         idle_timeout: Duration::from_secs(10),
+        grace_period: Duration::from_secs(3),
         max_tracked_connections: 100_000,
     }),
     ip_ban: Some(IpBanConfig {}),
     ..Default::default()
 };
-
-let config = ServerConfig::builder()
-    .guards(guards)
-    .build();
 ```
 
 | Guard | What it does |
@@ -124,7 +139,7 @@ let config = ServerConfig::builder()
 | **SlowLoris** | Drops connections that go idle too long |
 | **IpBan** | Runtime-mutable IP blocklist with `ban()`/`unban()` API |
 
-Guards implement a lifecycle (`on_reserve` / `on_established` / `on_activity` / `on_close`) and are automatically rolled back if a later guard in the stack rejects. All per-IP tracking maps are bounded to prevent memory exhaustion under IP rotation attacks.
+Guards implement a lifecycle (`on_reserve` / `on_established` / `on_payload` / `on_activity` / `on_close`) and are automatically rolled back if a later guard in the stack rejects. All per-IP tracking maps are bounded to prevent memory exhaustion under IP rotation attacks.
 
 ## TLS
 
@@ -141,16 +156,17 @@ let tls = TlsConfig::builder()
 
 let config = ServerConfig::builder()
     .tls(tls)
-    .accept_mode(AcceptMode::Tls)  // or AcceptMode::Mixed for auto-detect
+    .accept_mode(AcceptMode::Tls)
     .build();
 ```
+
+**Mixed mode** — `AcceptMode::Mixed` auto-detects whether each incoming connection is TLS or plain TCP on the same port. Use `connection.is_tls()` in the handler to branch.
+
+**mTLS** — set `.require_client_auth(true)` on the server's `TlsConfig` and provide `.trust_anchor(...)` with the client CA.
 
 Client-side:
 
 ```rust
-use synclaire::{AsyncClient, ClientConfig};
-use synclaire::config::{TlsConfig, PemSource};
-
 let tls = TlsConfig::builder()
     .enabled(true)
     .server_name("example.com")
@@ -164,75 +180,96 @@ let config = ClientConfig::builder()
 
 ## Routing and load balancing
 
-Route connections to different backends based on IP rules:
+Route connections to different backends based on source IP, with pluggable load balancing:
 
 ```rust
-use synclaire::routing::*;
-use synclaire::load_balancer::*;
+use std::sync::Arc;
+use synclaire::{RoutingTable, RoutingRule, RouteAction, IpGroup, IpPrefix, BackendPool};
 
-let pool = BackendPool::new(
-    vec![
-        Backend::new("10.0.0.1:8080".parse().unwrap()),
-        Backend::new("10.0.0.2:8080".parse().unwrap()),
-    ],
-    LoadBalancerStrategy::RoundRobin,
+let pool = Arc::new(BackendPool::round_robin([
+    "10.0.0.1:8080".parse().unwrap(),
+    "10.0.0.2:8080".parse().unwrap(),
+]));
+
+let routing = Arc::new(RoutingTable::new(RouteAction::Reject));
+routing.add_group("internal", IpGroup::new().add_prefix(IpPrefix::v4(10, 0, 0, 0, 8)));
+routing.add_rule(
+    RoutingRule::new("internal-to-pool", RouteAction::Pool(pool)).from_group("internal"),
 );
-
-let table = RoutingTable::new(vec![
-    RoutingRule::new(
-        IpGroup::prefix("192.168.0.0/16".parse().unwrap()),
-        RouteAction::Pool(pool),
-    ),
-]);
 ```
 
-Load balancer strategies: `RoundRobin`, `Random`, `LeastConnections`, `ConsistentHash`.
+Pool strategies: `round_robin`, `consistent_hash` (with `StickyKey::Ip` for session affinity and weighted backends).
 
 ## Proxy
 
-TCP proxy with optional HTTP CONNECT auth:
+TCP proxy with optional auth, routing, guards, and TLS offload:
 
 ```rust
-use synclaire::proxy::{ProxyConfig, ProxyServer, ProxyAuth};
+use synclaire::{ProxyConfig, ProxyServer, ProxyAuth};
 
-let config = ProxyConfig {
-    listen_addr: "0.0.0.0:8080".parse().unwrap(),
-    backend_addr: "10.0.0.1:3000".parse().unwrap(),
-    auth: Some(ProxyAuth::basic("user", "pass")),
-    ..Default::default()
-};
+let config = ProxyConfig::new("0.0.0.0:8080".parse()?, "10.0.0.1:3000".parse()?)
+    .with_auth(ProxyAuth::basic("user", "pass"))
+    .with_buffer_size(8192);
 
 ProxyServer::new(config).run()?;
 ```
 
 Both sync (`ProxyServer`) and async (`AsyncProxyServer`) variants available.
 
+**Dynamic auth rotation** — use `ProxyAuthHandle` to rotate credentials at runtime without restarting the proxy:
+
+```rust
+let auth_handle = ProxyAuthHandle::new(ProxyAuth::basic("admin", "secret"));
+let server = ProxyServer::new(config).with_auth_handle(auth_handle.clone());
+// later, from another thread:
+auth_handle.set_basic("admin", "new-secret")?;
+```
+
+**TLS offload** (async only) — terminate TLS at the proxy, forward plaintext to the backend:
+
+```rust
+let tls = TlsConfig::builder()
+    .enabled(true)
+    .certificate_chain(PemSource::file("proxy.crt"))
+    .private_key(PemSource::file("proxy.key"))
+    .build();
+
+let config = ProxyConfig::new(listen_addr, backend_addr)
+    .with_tls_offload(tls);
+
+AsyncProxyServer::new(config).run().await?;
+```
+
 ## Metrics
 
 ```rust
-use synclaire::metrics::{MetricsCollector, LoggingMetricsCallback};
+use std::sync::Arc;
+use synclaire::metrics::MetricsCollector;
 
-let metrics = MetricsCollector::new()
-    .with_callback(LoggingMetricsCallback);
+let metrics = Arc::new(MetricsCollector::new());
+// Pass to proxy via .with_metrics(metrics.clone())
 
-// After connections flow through:
 let snapshot = metrics.snapshot();
-println!("Active: {}", snapshot.active_connections);
-println!("Total: {}", snapshot.total_connections);
+println!("Active: {}, TCP: {}, TLS: {}", 
+    snapshot.active_connections, snapshot.tcp_connections_total, snapshot.tls_connections_total);
 ```
+
+Per-server, per-IP breakdowns and real-time callbacks via `MetricsCallback` trait.
 
 ## Connection filters
 
-Composable filters applied before the guard stack:
+Composable filters for custom accept/reject logic per connection:
 
 ```rust
+use std::sync::Arc;
 use synclaire::connection_filter::*;
 
-let filter = CompositeFilter::new(vec![
-    Box::new(IpBlocklistFilter::new(vec!["10.0.0.1".parse().unwrap()])),
-    Box::new(TlsOnlyFilter),
-]);
+let filter = CompositeFilter::new()
+    .add_filter(Arc::new(IpBlocklistFilter::new(["10.0.0.1".parse().unwrap()])))
+    .add_filter(Arc::new(TlsOnlyFilter));
 ```
+
+Implement the `ConnectionFilter` trait for custom auth — `filter(&self, conn: &Connection) -> Result<(), SynError>`.
 
 ## Feature flags
 
@@ -240,17 +277,21 @@ let filter = CompositeFilter::new(vec![
 |------|---------|----------------|
 | `async` | yes | Tokio-based async server/client (`AsyncServer`, `AsyncClient`) |
 | `sync` | no | Sync server/client (`SyncServer`, `SyncClient`) |
-| `rustls-backend` | yes | TLS via rustls with system root certificates |
-| `full` | no | All of the above |
+| `rustls-backend` | yes | TLS via rustls + ring (pure Rust, no C compiler) |
+| `aws-lc-backend` | no | TLS via rustls + aws-lc-rs (FIPS-capable, requires cmake) |
+| `full` | no | `async` + `sync` + `rustls-backend` |
 
 ```toml
-# Async only (default)
+# Async only (default — uses ring crypto provider)
 synclaire = "0.1"
 
 # Sync only
 synclaire = { version = "0.1", default-features = false, features = ["sync", "rustls-backend"] }
 
-# Both
+# FIPS-capable TLS (aws-lc-rs instead of ring)
+synclaire = { version = "0.1", default-features = false, features = ["async", "aws-lc-backend"] }
+
+# Both async + sync
 synclaire = { version = "0.1", features = ["full"] }
 ```
 
@@ -263,17 +304,33 @@ cargo run --example tcp-client-server-async
 # Sync TCP echo
 cargo run --example tcp-client-server-sync --features sync
 
-# TLS server
-cargo run --example tls-client-server-async
-
-# Mutual TLS
-cargo run --example mtls-client-server-async
-
-# Proxy with routing
-cargo run --example proxy-usage --features sync
+# Standalone server / client
+cargo run --example echo-server
+cargo run --example basic-client
 
 # Guard API demo
 cargo run --example guard-api
+
+# Metrics API demo
+cargo run --example metrics-api
+
+# Proxy with routing + auth
+cargo run --example proxy-usage --features sync
+
+# TLS examples require certificates — generate them first:
+cd examples && sh generate-certs.sh && cd ..
+
+cargo run --example tls-client-server-async
+cargo run --example tls-client-server-sync --features "sync,rustls-backend"
+cargo run --example tls-server
+
+# Mixed-mode (TCP + TLS on same port)
+cargo run --example mixed-client-server-async
+cargo run --example mixed-client-server-sync --features "sync,rustls-backend"
+
+# Mutual TLS (mTLS)
+cargo run --example mtls-client-server-async
+cargo run --example mtls-client-server-sync --features "sync,rustls-backend"
 ```
 
 ## License

@@ -1,16 +1,6 @@
-// Mixed-Mode (TCP + TLS) Client-Server Example (Asynchronous)
-// This example demonstrates a server that accepts both TCP and TLS connections on the same port
-// using automatic protocol detection. The server automatically detects whether the client is
-// connecting with TLS or plain TCP based on the first byte received (0x16 = TLS ClientHello).
-//
-// Usage:
-//   cargo run --example mixed-client-server-async --features async
-//
-// Modes:
-//   demo       (default) — binds to an OS-assigned port, runs server + both clients in-process
-//   server                — stand-alone server; prints the actual port
-//   client-tcp <port>     — plain-TCP client
-//   client-tls <port>     — TLS client
+// Async mixed-mode server: accepts both TCP and TLS on the same port.
+//   cd examples && sh generate-certs.sh && cd ..
+//   cargo run --example mixed-client-server-async
 
 use std::env;
 use synclaire::{
@@ -80,7 +70,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("Running Mixed-Mode Client-Server Demo (Asynchronous)...");
 
-    // Bind first so we know the port before the server's accept loop starts.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let port = listener.local_addr()?.port();
     println!("Server listening on port {port}");
@@ -135,7 +124,6 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 async fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     println!("Connecting to Mixed-Mode Server (Asynchronous) with plain TCP on port {}...", port);
 
-    // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let config = ClientConfig::builder()
@@ -145,11 +133,9 @@ async fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let mut conn = synclaire::AsyncClient::new(config).connect().await?;
     println!("Connected (TCP) to server: {}", conn.peer_addr());
 
-    // Send test message over plain TCP
     let message = b"Hello from Mixed-Mode Async Client (TCP)!";
     conn.write_all(message).await?;
 
-    // Read echo response
     let mut buf = [0u8; 1024];
     let n = conn.read(&mut buf).await?;
     println!("Received (TCP): {}", String::from_utf8_lossy(&buf[..n]));
@@ -160,13 +146,12 @@ async fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
 async fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     println!("Connecting to Mixed-Mode Server (Asynchronous) with TLS on port {}...", port);
 
-    // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let tls_config = TlsConfig::builder()
         .enabled(true)
         .server_name("localhost")
-        .trust_anchor(PemSource::file("examples/certs/server.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .build();
 
     let config = ClientConfig::builder()
@@ -177,11 +162,9 @@ async fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let mut conn = synclaire::AsyncClient::new(config).connect().await?;
     println!("Connected (TLS) to server: {}", conn.peer_addr());
 
-    // Send test message over TLS
     let message = b"Hello from Mixed-Mode Async Client (TLS)!";
     conn.write_all(message).await?;
 
-    // Read echo response
     let mut buf = [0u8; 1024];
     let n = conn.read(&mut buf).await?;
     println!("Received (TLS): {}", String::from_utf8_lossy(&buf[..n]));

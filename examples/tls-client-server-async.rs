@@ -1,14 +1,6 @@
-// TLS Client-Server Example (Asynchronous)
-// This example demonstrates an asynchronous TLS echo server and client using Tokio.
-// The server uses TLS to encrypt all communication.
-//
-// Usage:
-//   cargo run --example tls-client-server-async --features async
-//
-// Modes:
-//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
-//   server            — stand-alone server; prints the actual port so you can pass it to the client
-//   client <port>     — connects to the server on the given port
+// Async TLS echo server + client.
+//   cd examples && sh generate-certs.sh && cd ..
+//   cargo run --example tls-client-server-async
 
 use std::env;
 use synclaire::{
@@ -132,7 +124,7 @@ async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let tls_config = TlsConfig::builder()
         .enabled(true)
         .server_name("localhost")
-        .trust_anchor(PemSource::file("examples/certs/server.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .build();
 
     let config = ClientConfig::builder()

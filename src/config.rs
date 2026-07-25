@@ -7,18 +7,12 @@ use crate::{
     },
 };
 
-/// Controls what connection types the server will accept on its bound port.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum AcceptMode {
-    /// Accept plain TCP only (default).
     #[default]
     Tcp,
-    /// Accept TLS only. TLS config must be populated.
     Tls,
-    /// Auto-detect per connection by peeking at the first byte.
-    /// Connections that start with 0x16 (TLS ClientHello) get a TLS handshake;
-    /// everything else is treated as plain TCP.
-    /// TLS config must be populated for TLS connections to succeed.
+    /// Auto-detect TLS vs plain TCP per connection by peeking the first byte.
     Mixed,
 }
 
@@ -59,12 +53,7 @@ pub struct TlsConfig {
     pub client_private_key: Option<PemSource>,
     pub trust_anchors: Vec<PemSource>,
     pub alpn_protocols: Vec<String>,
-    /// **Security note:** Setting `verify_peer = false` disables certificate verification
-    /// entirely — the connection is vulnerable to man-in-the-middle attacks. Use only in
-    /// controlled environments (e.g. testing, private networks).
     pub verify_peer: bool,
-    /// When `true` and no `trust_anchors` are provided, load native system root certificates.
-    /// Set to `false` to use only explicitly provided `trust_anchors` (or an empty root store).
     pub use_system_roots: bool,
     pub require_client_auth: bool,
 }
@@ -143,7 +132,6 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// Replace the entire ALPN protocol list (clears the default "synclaire/1" entry).
     pub fn alpn_protocols(mut self, protocols: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.config.alpn_protocols = protocols.into_iter().map(|p| p.into()).collect();
         self
@@ -184,15 +172,7 @@ pub struct GuardStackConfig {
 pub struct ServerConfig {
     pub bind_addr: SocketAddr,
     pub worker_threads: usize,
-    /// Maximum allowed duration for a connection.
-    ///
-    /// **Async servers:** This is the total connection lifetime — handlers that run
-    /// longer than this duration are cancelled. This includes long-lived streaming
-    /// connections. Set to a large value (e.g. `Duration::MAX`) for persistent sessions.
-    ///
-    /// **Sync servers:** This is applied as a per-read/write socket timeout
-    /// (`SO_RCVTIMEO` / `SO_SNDTIMEO`). The connection is terminated if any
-    /// individual read or write blocks for longer than this duration.
+    /// Async: total connection lifetime. Sync: per-read/write socket timeout. Use `Duration::MAX` to disable.
     pub connection_timeout: Duration,
     pub max_connections: usize,
     pub tcp_nodelay: bool,
@@ -242,15 +222,6 @@ impl ServerConfigBuilder {
         self
     }
 
-    /// Set the maximum allowed duration for a connection.
-    ///
-    /// **Async servers:** This is the total connection lifetime — handlers that run
-    /// longer than this duration are cancelled. This includes long-lived streaming
-    /// connections. Set to a large value (e.g. `Duration::MAX`) for persistent sessions.
-    ///
-    /// **Sync servers:** This is applied as a per-read/write socket timeout
-    /// (`SO_RCVTIMEO` / `SO_SNDTIMEO`). The connection is terminated if any
-    /// individual read or write blocks for longer than this duration.
     pub fn connection_timeout(mut self, timeout: Duration) -> Self {
         self.config.connection_timeout = timeout;
         self
@@ -281,7 +252,6 @@ impl ServerConfigBuilder {
         self
     }
 
-    /// Set the accept mode (TCP-only, TLS-only, or mixed auto-detect).
     pub fn accept_mode(mut self, mode: AcceptMode) -> Self {
         self.config.accept_mode = mode;
         self
@@ -296,6 +266,7 @@ impl ServerConfigBuilder {
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
     pub connect_addr: SocketAddr,
+    /// Async: wraps connect + TLS handshake in `tokio::time::timeout`. Sync: connect + socket I/O timeout. Use `Duration::MAX` to disable.
     pub connection_timeout: Duration,
     pub tcp_nodelay: bool,
     pub tls: TlsConfig,

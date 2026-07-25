@@ -1,13 +1,4 @@
-// Guard API Usage Example
-// Demonstrates guard stack configuration and dynamic whitelist/blocklist management.
-//
-// This example shows:
-// 1. Creating and configuring guards (RateLimiter, Throttle, IpBan, SynGuard, SlowLoris)
-// 2. Dynamic IP blocking/unblocking (IpBan whitelist and blocklist)
-// 3. RateLimiter configuration for per-IP and global limits
-// 4. Connection guard session lifecycle
-//
-// Usage:
+// Guard API — rate limiting, throttle, IP ban, SYN guard, SlowLoris.
 //   cargo run --example guard-api
 
 use std::net::{IpAddr, Ipv4Addr};
@@ -19,28 +10,22 @@ use synclaire::guard::{
 fn main() {
     println!("=== Synclaire Guard API Example ===\n");
 
-    // Example 1: IP Ban with dynamic whitelist/blocklist
-    println!("1. IP Ban Guard (Dynamic Whitelist/Blocklist)\n");
+    println!("1. IP Ban Guard\n");
     demo_ip_ban();
 
-    // Example 2: Rate Limiter configuration
-    println!("\n2. Rate Limiter Guard (Per-IP and Global Limits)\n");
+    println!("\n2. Rate Limiter Guard\n");
     demo_rate_limiter();
 
-    // Example 3: Throttle configuration
-    println!("\n3. Throttle Guard (Connection Limits)\n");
+    println!("\n3. Throttle Guard\n");
     demo_throttle();
 
-    // Example 4: SynGuard configuration
-    println!("\n4. SYN Guard (Half-Open Connection Limits)\n");
+    println!("\n4. SYN Guard\n");
     demo_syn_guard();
 
-    // Example 5: SlowLoris Guard configuration
-    println!("\n5. Slow Loris Guard (Idle Timeout Protection)\n");
+    println!("\n5. Slow Loris Guard\n");
     demo_slow_loris();
 
-    // Example 6: Guard Stack composition
-    println!("\n6. Guard Stack (All Guards Together)\n");
+    println!("\n6. Guard Stack\n");
     demo_guard_stack();
 
     println!("\n=== Example Complete ===");
@@ -51,7 +36,6 @@ fn demo_ip_ban() {
 
     let ip_ban = IpBan::new(config);
 
-    // Create some test IPs
     let attacker1 = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
     let attacker2 = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2));
     let trusted_client = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
@@ -60,7 +44,6 @@ fn demo_ip_ban() {
     println!("  Attacker1 banned? {}", ip_ban.is_banned(&attacker1));
     println!("  Trusted client banned? {}", ip_ban.is_banned(&trusted_client));
 
-    // Dynamically ban IPs (like in a real attack scenario)
     println!("\nBanning attacker IPs...");
     ip_ban.ban(attacker1);
     ip_ban.ban(attacker2);
@@ -69,8 +52,7 @@ fn demo_ip_ban() {
     println!("  Attacker2 banned? {}", ip_ban.is_banned(&attacker2));
     println!("  Trusted client banned? {}", ip_ban.is_banned(&trusted_client));
 
-    // Later: unban an IP (false positive)
-    println!("\nUnbanning attacker1 (false positive)...");
+    println!("\nUnbanning attacker1...");
     ip_ban.unban(&attacker1);
     println!("  Attacker1 banned? {}", ip_ban.is_banned(&attacker1));
     println!("  Attacker2 still banned? {}", ip_ban.is_banned(&attacker2));
@@ -79,14 +61,13 @@ fn demo_ip_ban() {
 }
 
 fn demo_rate_limiter() {
-    // Custom rate limiter config (stricter than default)
     let config = RateLimiterConfig {
-        per_ip_capacity: 50,              // 50 tokens per IP
-        per_ip_refill_per_second: 10,     // 10 tokens/sec = 1 connection per 100ms
-        global_capacity: 500,              // 500 global tokens
-        global_refill_per_second: 100,    // 100 tokens/sec globally
+        per_ip_capacity: 50,
+        per_ip_refill_per_second: 10,
+        global_capacity: 500,
+        global_refill_per_second: 100,
         global_window: std::time::Duration::from_secs(10),
-        global_window_limit: 2_000,       // Max 2000 connections per 10-second window
+        global_window_limit: 2_000,
         max_tracked_ips: 100_000,
     };
 
@@ -105,10 +86,9 @@ fn demo_rate_limiter() {
 }
 
 fn demo_throttle() {
-    // Custom throttle config
     let config = ThrottleConfig {
-        max_connections_per_ip: 32,    // Max 32 concurrent per IP
-        max_connections_global: 512,   // Max 512 concurrent globally
+        max_connections_per_ip: 32,
+        max_connections_global: 512,
     };
 
     let _throttle = Throttle::new(config.clone());
@@ -125,9 +105,9 @@ fn demo_throttle() {
 
 fn demo_syn_guard() {
     let config = SynGuardConfig {
-        max_half_open_per_ip: 16,      // Max 16 half-open per IP
-        max_half_open_global: 256,     // Max 256 half-open globally
-        backlog_limit: 1_024,          // OS-level backlog
+        max_half_open_per_ip: 16,
+        max_half_open_global: 256,
+        backlog_limit: 1_024,
         syn_timeout: std::time::Duration::from_secs(5),
         max_tracked_ips: 100_000,
     };
@@ -170,7 +150,6 @@ fn demo_guard_stack() {
     println!("Guard Stack Configuration:");
     println!("  A guard stack applies multiple guards in sequence\n");
 
-    // Typical production guard stack
     println!("Typical Production Stack:");
     println!("  1. SynGuard → Rejects SYN floods early");
     println!("  2. IpBan → Rejects known malicious IPs");

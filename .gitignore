@@ -1,9 +1,6 @@
 target/
 Cargo.lock
-
-# Internal tooling
-.superpowers/
-docs/superpowers/
+examples/certs/
 
 # Editor settings
 .vscode/

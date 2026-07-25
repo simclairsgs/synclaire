@@ -1,33 +1,36 @@
-use std::time::Duration;
+// Echo server — stream inspection + read/write loop.
+//   cargo run --example echo-server
 
-use synclaire::{handler::ConnectionHandler, AsyncServer, AsyncStream, ServerConfig, SynError};
+use synclaire::{ServerConfig, SynError};
+
+#[cfg(feature = "async")]
+use std::time::Duration;
+#[cfg(feature = "async")]
+use synclaire::{handler::ConnectionHandler, AsyncServer, AsyncStream};
+#[cfg(feature = "async")]
 use tracing_subscriber::EnvFilter;
 
 struct EchoHandler;
 
+#[cfg(feature = "async")]
 impl ConnectionHandler for EchoHandler {
     fn handle<'a>(&'a self, mut connection: synclaire::Connection) -> synclaire::handler::HandlerFuture<'a> {
         Box::pin(async move {
-            // You get the concrete stream type directly — no trait-object gymnastics.
             let tls = connection.is_tls();
             let peer = connection.peer_addr();
             log::info!("new connection peer={} tls={}", peer, tls);
 
-            // Pattern-match to get the raw socket if you need it.
             match connection.async_stream().expect("async connection") {
                 AsyncStream::Tcp(tcp) => {
-                    // Direct access to the TcpStream — set options, inspect peer, etc.
                     let _ = tcp.peer_addr();
                     log::info!("plain TCP connection peer={}", peer);
                 }
                 AsyncStream::ServerTls(_tls_stream) => {
-                    // Direct access to the TLS stream, including get_ref() for the handshake data.
                     log::info!("TLS connection peer={}", peer);
                 }
                 AsyncStream::ClientTls(_) => {}
             }
 
-            // Or just use the convenience read/write helpers.
             let mut buffer = vec![0_u8; 1024];
             loop {
                 let read = connection.read(&mut buffer).await?;

@@ -14,14 +14,17 @@ categories = ["network-programming", "asynchronous", "cryptography"]
 default = ["async", "rustls-backend"]
 async = ["dep:tokio", "dep:tokio-rustls", "dep:futures"]
 sync = ["dep:futures"]
-rustls-backend = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pemfile"]
+# TLS via rustls with the ring crypto provider (pure Rust, no C compiler required)
+rustls-backend = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pemfile", "rustls/ring"]
+# TLS via rustls with the aws-lc-rs crypto provider (FIPS-capable, requires cmake)
+aws-lc-backend = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pemfile", "rustls/aws_lc_rs"]
 full = ["async", "sync", "rustls-backend"]
 
 [dependencies]
 futures = { version = "0.3", optional = true }
 log = "0.4"
 parking_lot = "0.12"
-rustls = { version = "0.23", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "logging", "tls12"], optional = true }
 rustls-pemfile = { version = "2.2", optional = true }
 rustls-native-certs = { version = "0.8", optional = true }
 thiserror = "2"
@@ -32,3 +35,23 @@ tokio-rustls = { version = "0.26", optional = true }
 tempfile = "3"
 env_logger = "0.10"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+[[example]]
+name = "tcp-client-server-sync"
+required-features = ["sync"]
+
+[[example]]
+name = "tls-client-server-sync"
+required-features = ["sync", "rustls-backend"]
+
+[[example]]
+name = "mtls-client-server-sync"
+required-features = ["sync", "rustls-backend"]
+
+[[example]]
+name = "mixed-client-server-sync"
+required-features = ["sync", "rustls-backend"]
+
+[[example]]
+name = "proxy-usage"
+required-features = ["sync"]

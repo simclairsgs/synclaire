@@ -2,18 +2,13 @@ use std::{fs, sync::Arc};
 
 use rustls::{ClientConfig, RootCertStore, ServerConfig};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::crypto::CryptoProvider;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, Error as TlsError, SignatureScheme};
 use rustls_pemfile as pemfile;
 
 use crate::{config::{PemSource, TlsConfig}, SynError};
 
-/// Certificate verifier that accepts any server certificate.
-///
-/// Used only when `TlsConfig::verify_peer = false`.
-///
-/// **Security:** This disables all certificate validation and makes the connection
-/// vulnerable to man-in-the-middle attacks. Use only in controlled environments.
 #[derive(Debug)]
 struct NoopServerVerifier;
 
@@ -68,7 +63,24 @@ impl ServerCertVerifier for NoopServerVerifier {
 }
 
 pub fn backend_name() -> &'static str {
-    "rustls"
+    #[cfg(feature = "aws-lc-backend")]
+    { "rustls/aws-lc-rs" }
+
+    #[cfg(not(feature = "aws-lc-backend"))]
+    { "rustls/ring" }
+}
+
+fn crypto_provider() -> Arc<CryptoProvider> {
+    #[cfg(feature = "aws-lc-backend")]
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+
+    #[cfg(not(feature = "aws-lc-backend"))]
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+
+    // Install as process-level default so rustls internals that bypass
+    // builder_with_provider can still find a provider.
+    let _ = CryptoProvider::install_default((*provider).clone());
+    provider
 }
 
 fn read_source(source: &PemSource) -> Result<Vec<u8>, SynError> {
@@ -120,21 +132,27 @@ pub fn build_server_config(tls: &TlsConfig) -> Result<Arc<ServerConfig>, SynErro
         .ok_or_else(|| SynError::config("server TLS is enabled but no private key was provided"))
         .and_then(load_private_key)?;
 
+    let new_builder = || {
+        ServerConfig::builder_with_provider(crypto_provider())
+            .with_safe_default_protocol_versions()
+            .map_err(|e| SynError::tls(e.to_string()))
+    };
+
     let builder = if tls.require_client_auth {
         let roots = build_root_store(&tls.trust_anchors)?;
-        let verifier = rustls::server::WebPkiClientVerifier::builder(roots)
+        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(roots, crypto_provider())
             .build()
             .map_err(|error| SynError::tls(error.to_string()))?;
-        ServerConfig::builder().with_client_cert_verifier(verifier)
+        new_builder()?.with_client_cert_verifier(verifier)
     } else if tls.trust_anchors.is_empty() {
-        ServerConfig::builder().with_no_client_auth()
+        new_builder()?.with_no_client_auth()
     } else {
         let roots = build_root_store(&tls.trust_anchors)?;
-        let verifier = rustls::server::WebPkiClientVerifier::builder(roots)
+        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(roots, crypto_provider())
             .allow_unauthenticated()
             .build()
             .map_err(|error| SynError::tls(error.to_string()))?;
-        ServerConfig::builder().with_client_cert_verifier(verifier)
+        new_builder()?.with_client_cert_verifier(verifier)
     };
 
     let mut config = builder.with_single_cert(certs, key)?;
@@ -150,7 +168,10 @@ pub fn build_server_config(tls: &TlsConfig) -> Result<Arc<ServerConfig>, SynErro
 
 pub fn build_client_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, SynError> {
     let roots = build_root_store_for_client(tls)?;
-    let builder = ClientConfig::builder().with_root_certificates(roots);
+    let builder = ClientConfig::builder_with_provider(crypto_provider())
+        .with_safe_default_protocol_versions()
+        .map_err(|e| SynError::tls(e.to_string()))?
+        .with_root_certificates(roots);
 
     let mut config = if !tls.verify_peer {
         // Caller has disabled peer verification; install the no-op verifier.

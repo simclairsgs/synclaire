@@ -1,22 +1,14 @@
-// Mutual TLS (mTLS) Client-Server Example (Synchronous)
-// This example demonstrates synchronous mTLS where both client and server authenticate each other.
-// Both client and server present certificates and verify the other's certificate.
-//
-// Usage:
+// Sync mTLS echo server + client (mutual certificate verification).
+//   cd examples && sh generate-certs.sh && cd ..
 //   cargo run --example mtls-client-server-sync --features sync
-//
-// Modes:
-//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
-//   server            — stand-alone server; prints the actual port so you can pass it to the client
-//   client <port>     — connects to the server on the given port
 
 use std::env;
-
 use std::io::{Read, Write};
+
 use synclaire::{
     config::{ClientConfig, ServerConfig, TlsConfig},
     handler::SyncConnectionHandler,
-    PemSource, SyncServer, SynError,
+    PemSource, SyncServer,
 };
 
 struct EchoHandler;
@@ -89,7 +81,7 @@ fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
         .enabled(true)
         .certificate_chain(PemSource::file("examples/certs/server.crt"))
         .private_key(PemSource::file("examples/certs/server.key"))
-        .trust_anchor(PemSource::file("examples/certs/client.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .require_client_auth(true)
         .build();
 
@@ -123,7 +115,7 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .enabled(true)
         .certificate_chain(PemSource::file("examples/certs/server.crt"))
         .private_key(PemSource::file("examples/certs/server.key"))
-        .trust_anchor(PemSource::file("examples/certs/client.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .require_client_auth(true)
         .build();
 
@@ -141,8 +133,6 @@ fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Duration;
 
     println!("Connecting to mTLS Echo Server (Synchronous - Mutual Authentication) on port {}...", port);
-
-    // Give server time to start
     thread::sleep(Duration::from_millis(100));
 
     let tls_config = TlsConfig::builder()
@@ -150,7 +140,7 @@ fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .server_name("localhost")
         .client_certificate_chain(PemSource::file("examples/certs/client.crt"))
         .client_private_key(PemSource::file("examples/certs/client.key"))
-        .trust_anchor(PemSource::file("examples/certs/server.crt"))
+        .trust_anchor(PemSource::file("examples/certs/ca.crt"))
         .build();
 
     let config = ClientConfig::builder()
@@ -158,17 +148,16 @@ fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .tls(tls_config)
         .build();
 
-    let mut conn = synclaire::SyncClient::new(config).connect()?;
+    let conn = synclaire::SyncClient::new(config).connect()?;
     println!("Connected via mTLS to server: {} (server verified)", conn.peer_addr());
 
+    let mut stream = conn.into_stream().into_sync().expect("sync stream");
     let message = b"Hello from mTLS Sync Client (mutually authenticated)!";
-    futures::executor::block_on(async {
-        conn.write_all(message).await?;
-        let mut buf = [0u8; 1024];
-        let n = conn.read(&mut buf).await?;
-        println!("Received (mTLS): {}", String::from_utf8_lossy(&buf[..n]));
-        Ok::<(), SynError>(())
-    })?;
+    stream.write_all(message)?;
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf)?;
+    println!("Received (mTLS): {}", String::from_utf8_lossy(&buf[..n]));
 
     Ok(())
 }

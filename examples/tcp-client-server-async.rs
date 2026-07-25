@@ -1,13 +1,5 @@
-// TCP Client-Server Example (Asynchronous)
-// This example demonstrates a simple asynchronous TCP echo server and client using Tokio.
-//
-// Usage:
-//   cargo run --example tcp-client-server-async --features async
-//
-// Modes:
-//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
-//   server            — stand-alone server; prints the actual port so you can pass it to the client
-//   client <port>     — connects to the server on the given port
+// Async TCP echo server + client.
+//   cargo run --example tcp-client-server-async
 
 use std::env;
 use synclaire::{config::ServerConfig, handler::ConnectionHandler, AsyncServer};

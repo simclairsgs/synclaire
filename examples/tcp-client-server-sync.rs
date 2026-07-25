@@ -1,17 +1,9 @@
-// TCP Client-Server Example (Synchronous)
-// This example demonstrates a simple synchronous TCP echo server and client.
-//
-// Usage:
+// Sync TCP echo server + client.
 //   cargo run --example tcp-client-server-sync --features sync
-//
-// Modes:
-//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
-//   server            — stand-alone server; prints the actual port so you can pass it to the client
-//   client <port>     — connects to the server on the given port
 
 use std::env;
 use std::io::{Read, Write};
-use synclaire::{config::ServerConfig, handler::SyncConnectionHandler, SyncServer, SynError};
+use synclaire::{config::ServerConfig, handler::SyncConnectionHandler, SyncServer};
 
 struct EchoHandler;
 
@@ -110,29 +102,27 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{Read, Write};
     use std::thread;
     use std::time::Duration;
 
     println!("Connecting to TCP Echo Server (Synchronous) on port {}...", port);
-
-    // Give server time to start
     thread::sleep(Duration::from_millis(100));
 
     let config = synclaire::config::ClientConfig::builder()
         .connect_addr(format!("127.0.0.1:{}", port).parse()?)
         .build();
 
-    let mut conn = synclaire::SyncClient::new(config).connect()?;
+    let conn = synclaire::SyncClient::new(config).connect()?;
     println!("Connected to server: {}", conn.peer_addr());
 
+    let mut stream = conn.into_stream().into_sync().expect("sync stream");
     let message = b"Hello from TCP Sync Client!";
-    futures::executor::block_on(async {
-        conn.write_all(message).await?;
-        let mut buf = [0u8; 1024];
-        let n = conn.read(&mut buf).await?;
-        println!("Received: {}", String::from_utf8_lossy(&buf[..n]));
-        Ok::<(), SynError>(())
-    })?;
+    stream.write_all(message)?;
+
+    let mut buf = [0u8; 1024];
+    let n = stream.read(&mut buf)?;
+    println!("Received: {}", String::from_utf8_lossy(&buf[..n]));
 
     Ok(())
 }

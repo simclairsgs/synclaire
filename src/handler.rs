@@ -41,56 +41,44 @@ impl ConnectionMetadata {
     }
 }
 
-/// Concrete async transport. Pattern-match to get the real TCP or TLS socket,
-/// or use it directly as `AsyncRead + AsyncWrite`.
+/// Async transport — use as `AsyncRead + AsyncWrite` or pattern-match for the concrete socket.
 #[cfg(feature = "async")]
 pub enum AsyncStream {
-    /// Plain TCP connection.
     Tcp(tokio::net::TcpStream),
-    /// TLS connection accepted on the server side.
     ServerTls(tokio_rustls::server::TlsStream<tokio::net::TcpStream>),
-    /// TLS connection established on the client side.
     ClientTls(tokio_rustls::client::TlsStream<tokio::net::TcpStream>),
 }
 
 #[cfg(feature = "async")]
 impl AsyncStream {
-    /// `true` for any TLS variant.
     pub fn is_tls(&self) -> bool {
         matches!(self, AsyncStream::ServerTls(_) | AsyncStream::ClientTls(_))
     }
 
-    /// Plain TCP socket, `None` if TLS-wrapped.
     pub fn as_tcp(&self) -> Option<&tokio::net::TcpStream> {
         match self { AsyncStream::Tcp(s) => Some(s), _ => None }
     }
 
-    /// Mutable plain TCP socket, `None` if TLS-wrapped.
     pub fn as_tcp_mut(&mut self) -> Option<&mut tokio::net::TcpStream> {
         match self { AsyncStream::Tcp(s) => Some(s), _ => None }
     }
 
-    /// Server-side TLS stream, or `None`.
     pub fn as_server_tls(&self) -> Option<&tokio_rustls::server::TlsStream<tokio::net::TcpStream>> {
         match self { AsyncStream::ServerTls(s) => Some(s), _ => None }
     }
 
-    /// Mutable server-side TLS stream, or `None`.
     pub fn as_server_tls_mut(&mut self) -> Option<&mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>> {
         match self { AsyncStream::ServerTls(s) => Some(s), _ => None }
     }
 
-    /// Client-side TLS stream, or `None`.
     pub fn as_client_tls(&self) -> Option<&tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
         match self { AsyncStream::ClientTls(s) => Some(s), _ => None }
     }
 
-    /// Mutable client-side TLS stream, or `None`.
     pub fn as_client_tls_mut(&mut self) -> Option<&mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
         match self { AsyncStream::ClientTls(s) => Some(s), _ => None }
     }
 
-    /// Underlying TCP socket regardless of TLS wrapping.
     pub fn tcp(&self) -> &tokio::net::TcpStream {
         match self {
             AsyncStream::Tcp(s) => s,
@@ -136,25 +124,21 @@ impl AsyncWrite for AsyncStream {
     }
 }
 
-/// Concrete sync transport.
 #[cfg(feature = "sync")]
 pub enum SyncStream {
-    /// Plain TCP connection.
     Tcp(std::net::TcpStream),
-    /// TLS connection accepted on the server side.
-    #[cfg(feature = "rustls-backend")]
+    #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
     ServerTls(rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>),
-    /// TLS connection established on the client side.
-    #[cfg(feature = "rustls-backend")]
+    #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
     ClientTls(rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>),
 }
 
 #[cfg(feature = "sync")]
 impl SyncStream {
     pub fn is_tls(&self) -> bool {
-        #[cfg(feature = "rustls-backend")]
+        #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
         { matches!(self, SyncStream::ServerTls(_) | SyncStream::ClientTls(_)) }
-        #[cfg(not(feature = "rustls-backend"))]
+        #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
         { false }
     }
 }
@@ -164,9 +148,9 @@ impl Read for SyncStream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             SyncStream::Tcp(s) => s.read(buf),
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             SyncStream::ServerTls(s) => s.read(buf),
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             SyncStream::ClientTls(s) => s.read(buf),
         }
     }
@@ -177,24 +161,23 @@ impl Write for SyncStream {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             SyncStream::Tcp(s) => s.write(buf),
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             SyncStream::ServerTls(s) => s.write(buf),
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             SyncStream::ClientTls(s) => s.write(buf),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
         match self {
             SyncStream::Tcp(s) => s.flush(),
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             SyncStream::ServerTls(s) => s.flush(),
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             SyncStream::ClientTls(s) => s.flush(),
         }
     }
 }
 
-/// Unified stream wrapper — either async or sync.
 pub enum ConnectionStream {
     #[cfg(feature = "async")]
     Async(AsyncStream),
@@ -277,13 +260,11 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Build from a plain async TCP stream.
     #[cfg(feature = "async")]
     pub fn from_async_tcp(metadata: ConnectionMetadata, stream: tokio::net::TcpStream) -> Self {
         Self { metadata, stream: Some(ConnectionStream::Async(AsyncStream::Tcp(stream))), guard_session: None }
     }
 
-    /// Build from a server-side async TLS stream.
     #[cfg(feature = "async")]
     pub fn from_async_server_tls(
         metadata: ConnectionMetadata,
@@ -292,7 +273,6 @@ impl Connection {
         Self { metadata, stream: Some(ConnectionStream::Async(AsyncStream::ServerTls(stream))), guard_session: None }
     }
 
-    /// Build from a client-side async TLS stream.
     #[cfg(feature = "async")]
     pub fn from_client_tls(
         metadata: ConnectionMetadata,
@@ -301,20 +281,17 @@ impl Connection {
         Self { metadata, stream: Some(ConnectionStream::Async(AsyncStream::ClientTls(stream))), guard_session: None }
     }
 
-    /// Build from an already-resolved async stream enum.
     #[cfg(feature = "async")]
     pub fn from_async_stream(metadata: ConnectionMetadata, stream: AsyncStream) -> Self {
         Self { metadata, stream: Some(ConnectionStream::Async(stream)), guard_session: None }
     }
 
-    /// Build from a plain sync TCP stream.
     #[cfg(feature = "sync")]
     pub fn from_sync_tcp(metadata: ConnectionMetadata, stream: std::net::TcpStream) -> Self {
         Self { metadata, stream: Some(ConnectionStream::Sync(SyncStream::Tcp(stream))), guard_session: None }
     }
 
-    /// Build from a sync server-side TLS stream.
-    #[cfg(all(feature = "sync", feature = "rustls-backend"))]
+    #[cfg(all(feature = "sync", any(feature = "rustls-backend", feature = "aws-lc-backend")))]
     pub(crate) fn from_sync_server_tls(
         metadata: ConnectionMetadata,
         stream: rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>,
@@ -322,8 +299,7 @@ impl Connection {
         Self { metadata, stream: Some(ConnectionStream::Sync(SyncStream::ServerTls(stream))), guard_session: None }
     }
 
-    /// Build from a sync client-side TLS stream.
-    #[cfg(all(feature = "sync", feature = "rustls-backend"))]
+    #[cfg(all(feature = "sync", any(feature = "rustls-backend", feature = "aws-lc-backend")))]
     pub(crate) fn from_sync_client_tls(
         metadata: ConnectionMetadata,
         stream: rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>,
@@ -336,33 +312,27 @@ impl Connection {
         self
     }
 
-    /// Per-connection metadata.
     pub fn metadata(&self) -> &ConnectionMetadata {
         &self.metadata
     }
 
-    /// Reference to the raw stream.
     pub fn stream(&self) -> &ConnectionStream {
         self.stream.as_ref().expect("stream was already taken")
     }
 
-    /// Mutable reference to the raw stream.
     pub fn stream_mut(&mut self) -> &mut ConnectionStream {
         self.stream.as_mut().expect("stream was already taken")
     }
 
-    /// Take ownership of the raw stream — useful for zero-copy proxying.
     pub fn into_stream(mut self) -> ConnectionStream {
         self.stream.take().expect("stream was already taken")
     }
 
-    /// Returns the async stream, or `None` if this is a sync connection.
     #[cfg(feature = "async")]
     pub fn async_stream(&self) -> Option<&AsyncStream> {
         self.stream().as_async()
     }
 
-    /// Returns the mutable async stream, or `None` if this is a sync connection.
     #[cfg(feature = "async")]
     pub fn async_stream_mut(&mut self) -> Option<&mut AsyncStream> {
         self.stream_mut().as_async_mut()
@@ -376,7 +346,6 @@ impl Connection {
         self.metadata.local_addr
     }
 
-    /// `true` if the underlying stream is TLS.
     pub fn is_tls(&self) -> bool {
         self.stream.as_ref().map(|s| s.is_tls()).unwrap_or(false)
     }
@@ -462,11 +431,6 @@ where
     }
 }
 
-/// Handler trait for use with [`crate::SyncServer`].
-///
-/// Unlike [`ConnectionHandler`], this is a synchronous call — you may not call
-/// any Tokio async primitives inside the implementation. If you need async I/O
-/// in a sync-server context, run your own `tokio::runtime::Handle` explicitly.
 #[cfg(feature = "sync")]
 pub trait SyncConnectionHandler: Send + Sync + 'static {
     fn handle(&self, connection: Connection) -> HandlerResult;
@@ -520,7 +484,7 @@ mod tests {
         assert!(!connection.is_tls());
         match connection.into_stream().into_sync().expect("sync stream") {
             SyncStream::Tcp(_) => {}
-            #[cfg(feature = "rustls-backend")]
+            #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             _ => panic!("expected TCP stream"),
         }
     }

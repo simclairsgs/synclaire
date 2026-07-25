@@ -1,49 +1,20 @@
-// Connection filter trait for custom authentication/authorization
-// 
-// Allows servers to implement custom logic to accept or reject connections
-// based on metadata like peer address, TLS status, etc.
-
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::handler::Connection;
 use crate::SynError;
 
-/// Trait for custom connection filtering/authentication
-/// 
-/// Implement this trait to provide custom logic for accepting or rejecting
-/// connections based on connection metadata.
-/// 
-/// # Example
-/// 
-/// ```ignore
-/// struct IpWhitelist(Vec<IpAddr>);
-/// 
-/// impl ConnectionFilter for IpWhitelist {
-///     fn filter(&self, conn: &Connection) -> Result<(), SynError> {
-///         if self.0.contains(&conn.metadata.peer_addr.ip()) {
-///             Ok(())
-///         } else {
-///             Err(SynError::unauthorized("IP not whitelisted"))
-///         }
-///     }
-/// }
-/// ```
 pub trait ConnectionFilter: Send + Sync {
-    /// Evaluate the connection and return Ok if accepted, Err if rejected
     fn filter(&self, conn: &Connection) -> Result<(), SynError>;
 }
 
-/// Type alias for a boxed connection filter
 pub type BoxedConnectionFilter = Arc<dyn ConnectionFilter>;
 
-/// Simple IP whitelist filter
 pub struct IpWhitelistFilter {
     allowed_ips: HashSet<std::net::IpAddr>,
 }
 
 impl IpWhitelistFilter {
-    /// Create a new IP whitelist filter
     pub fn new(allowed_ips: impl IntoIterator<Item = std::net::IpAddr>) -> Self {
         Self { allowed_ips: allowed_ips.into_iter().collect() }
     }
@@ -59,13 +30,11 @@ impl ConnectionFilter for IpWhitelistFilter {
     }
 }
 
-/// Simple IP blocklist filter
 pub struct IpBlocklistFilter {
     blocked_ips: HashSet<std::net::IpAddr>,
 }
 
 impl IpBlocklistFilter {
-    /// Create a new IP blocklist filter
     pub fn new(blocked_ips: impl IntoIterator<Item = std::net::IpAddr>) -> Self {
         Self { blocked_ips: blocked_ips.into_iter().collect() }
     }
@@ -81,7 +50,6 @@ impl ConnectionFilter for IpBlocklistFilter {
     }
 }
 
-/// TLS-only filter (reject non-TLS connections)
 pub struct TlsOnlyFilter;
 
 impl ConnectionFilter for TlsOnlyFilter {
@@ -94,18 +62,15 @@ impl ConnectionFilter for TlsOnlyFilter {
     }
 }
 
-/// Combined filter that runs multiple filters (all must pass)
 pub struct CompositeFilter {
     filters: Vec<BoxedConnectionFilter>,
 }
 
 impl CompositeFilter {
-    /// Create a new composite filter with no filters
     pub fn new() -> Self {
         Self { filters: Vec::new() }
     }
 
-    /// Add a filter to this composite (returns self for chaining)
     pub fn add_filter(mut self, filter: BoxedConnectionFilter) -> Self {
         self.filters.push(filter);
         self

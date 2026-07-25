@@ -1,5 +1,12 @@
+// Basic client — connect, inspect stream type, send a message.
+//   cargo run --example basic-client [port]
+
 use std::env;
-use synclaire::{client::AsyncClient, AsyncStream, ClientConfig, SynError};
+use synclaire::{ClientConfig, SynError};
+
+#[cfg(feature = "async")]
+use synclaire::{client::AsyncClient, AsyncStream};
+#[cfg(feature = "async")]
 use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "async")]
@@ -21,10 +28,8 @@ async fn main() -> Result<(), SynError> {
         .build();
     let mut connection = AsyncClient::new(config).connect().await?;
 
-    // Check what you actually got.
     log::info!("connected tls={} peer={}", connection.is_tls(), connection.peer_addr());
 
-    // Pattern-match to reach the concrete socket.
     match connection.async_stream().expect("async connection") {
         AsyncStream::Tcp(tcp) => log::info!("plain TCP socket local={:?}", tcp.local_addr().ok()),
         AsyncStream::ClientTls(tls_stream) => {
@@ -42,6 +47,8 @@ async fn main() -> Result<(), SynError> {
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
 fn main() -> Result<(), SynError> {
+    use std::io::Write;
+
     let port = env::args()
         .nth(1)
         .and_then(|s| s.parse().ok())
@@ -51,12 +58,9 @@ fn main() -> Result<(), SynError> {
         .name("basic-client")
         .connect_addr(format!("127.0.0.1:{}", port).parse().unwrap())
         .build();
-    let mut connection = synclaire::client::SyncClient::new(config).connect()?;
-    futures::executor::block_on(async {
-        connection.write_all(b"hello from synclaire\n").await?;
-        connection.shutdown().await?;
-        Ok::<(), SynError>(())
-    })?;
+    let conn = synclaire::client::SyncClient::new(config).connect()?;
+    let mut stream = conn.into_stream().into_sync().expect("sync stream");
+    stream.write_all(b"hello from synclaire\n")?;
     Ok(())
 }
 

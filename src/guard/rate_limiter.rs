@@ -16,8 +16,6 @@ pub struct RateLimiterConfig {
     pub global_refill_per_second: u32,
     pub global_window: Duration,
     pub global_window_limit: usize,
-    /// Maximum number of distinct IPs tracked in the per-IP bucket map.
-    /// When exceeded, the oldest-seen IP entry is evicted (LRU-by-insertion).
     pub max_tracked_ips: usize,
 }
 
@@ -169,13 +167,7 @@ impl Guard for RateLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::guard::{Guard, GuardContext};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
-    fn ctx(ip: IpAddr) -> GuardContext {
-        let addr = SocketAddr::new(ip, 1234);
-        GuardContext::new(addr, None, false)
-    }
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn per_ip_map_does_not_grow_past_limit() {
