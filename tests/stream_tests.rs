@@ -107,6 +107,80 @@ fn accept_mode_builder_sets_tls_and_mixed() {
 }
 
 // ------------------------------------------------------------------
+// connection_timeout enforcement (I1 fix)
+// ------------------------------------------------------------------
+
+#[cfg(feature = "async")]
+#[tokio::test]
+async fn async_server_enforces_connection_timeout() {
+    use synclaire::{
+        config::ServerConfig,
+        handler::{Connection, HandlerFuture, ConnectionHandler},
+        server::async_server::AsyncServer,
+    };
+    use std::{
+        sync::{Arc, atomic::{AtomicBool, Ordering}},
+        time::Duration,
+    };
+
+    struct SlowHandler {
+        started: Arc<AtomicBool>,
+    }
+
+    impl ConnectionHandler for SlowHandler {
+        fn handle<'a>(&'a self, _conn: Connection) -> HandlerFuture<'a> {
+            // Store synchronously (before returning the future) so the test can
+            // assert the handler was actually invoked.
+            self.started.store(true, Ordering::SeqCst);
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                Ok(())
+            })
+        }
+    }
+
+    let started = Arc::new(AtomicBool::new(false));
+    let handler = SlowHandler { started: Arc::clone(&started) };
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let config = ServerConfig {
+        bind_addr: addr,
+        connection_timeout: Duration::from_millis(100),
+        ..Default::default()
+    };
+
+    let (shutdown_tx, shutdown_rx) = AsyncServer::<SlowHandler>::shutdown_channel();
+    tokio::spawn(async move {
+        AsyncServer::new(config, handler).run_until_shutdown(shutdown_rx).await.ok();
+    });
+    // Give the server time to start listening.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    // Connect and wait for the server to close the connection after the timeout.
+    let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let t0 = std::time::Instant::now();
+
+    // Read blocks until the server drops the connection (after timeout fires).
+    let mut buf = [0u8; 1];
+    let _ = tokio::io::AsyncReadExt::read(&mut client, &mut buf).await;
+    let elapsed = t0.elapsed();
+
+    assert!(started.load(Ordering::SeqCst), "handler should have been invoked");
+    // Timeout is 100 ms; allow generous headroom for CI overhead but far less
+    // than the handler's 10-second sleep — proving the timeout fired.
+    assert!(
+        elapsed < Duration::from_millis(800),
+        "connection should close within 800 ms (timeout=100 ms), took {:?}",
+        elapsed,
+    );
+
+    shutdown_tx.shutdown().ok();
+}
+
+// ------------------------------------------------------------------
 // Handler works with the concrete stream (functional smoke test)
 // ------------------------------------------------------------------
 

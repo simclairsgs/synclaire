@@ -174,7 +174,14 @@ where
     guard_session.mark_established()?;
     let connection = attach_guard_session(connection, guard_session);
 
-    handler.handle(connection).await
+    let timeout = config.connection_timeout;
+    match tokio::time::timeout(timeout, handler.handle(connection)).await {
+        Ok(result) => result,
+        Err(_) => {
+            log::debug!("[{}] connection timed out after {:?}", context.peer_addr, timeout);
+            Ok(())
+        }
+    }
 }
 
 /// Peek at the first byte to decide if this is a TLS ClientHello.

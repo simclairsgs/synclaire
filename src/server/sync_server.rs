@@ -200,6 +200,11 @@ fn handle_sync_connection<H>(
 where
     H: ConnectionHandler,
 {
+    // Enforce connection_timeout for I/O operations on this socket.
+    let timeout = Some(config.connection_timeout);
+    stream.set_read_timeout(timeout)?;
+    stream.set_write_timeout(timeout)?;
+
     let guard_session = guards.reserve(context.clone())?;
 
     let connection = if config.tls.enabled {
