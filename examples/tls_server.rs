@@ -78,6 +78,32 @@ async fn main() -> Result<(), SynError> {
 }
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
+impl synclaire::SyncConnectionHandler for TlsEchoHandler {
+    fn handle(&self, conn: synclaire::Connection) -> synclaire::error::Result<()> {
+        use std::io::{Read, Write};
+        let peer = conn.peer_addr();
+        let is_tls = conn.is_tls();
+        if is_tls {
+            log::info!("TLS handshake complete peer={}", peer);
+        } else {
+            log::info!("plain TCP connection on mixed-mode server peer={}", peer);
+        }
+        let mut stream = conn.into_stream().into_sync().expect("sync stream");
+        let mut buf = vec![0_u8; 1024];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => stream.write_all(&buf[..n])?,
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
+                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(not(feature = "async"), feature = "sync"))]
 fn main() -> Result<(), SynError> {
     let tls = TlsConfig::builder()
         .enabled(true)

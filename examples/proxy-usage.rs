@@ -18,12 +18,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use synclaire::{
-    Backend, BackendPool, Connection, ConnectionHandler, GuardStackConfig, IpGroup, IpPrefix,
+    Backend, BackendPool, Connection, GuardStackConfig, IpGroup, IpPrefix,
     MetricsCollector, ProxyAuth, ProxyAuthHandle, ProxyClient, ProxyConfig, ProxyServer,
     RateLimiterConfig, RouteAction, RoutingRule, RoutingTable, ServerConfig, StickyKey,
     SyncServer,
 };
-use synclaire::handler::HandlerFuture;
+use synclaire::SyncConnectionHandler;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -52,20 +52,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 struct EchoHandler;
 
-impl ConnectionHandler for EchoHandler {
-    fn handle<'a>(&'a self, mut conn: Connection) -> HandlerFuture<'a> {
-        Box::pin(async move {
-            let peer = conn.peer_addr();
-            log::info!("[backend] new connection from {}", peer);
-            let mut buf = vec![0u8; 4096];
-            loop {
-                let n = conn.read(&mut buf).await?;
-                if n == 0 { break; }
-                conn.write_all(&buf[..n]).await?;
+impl SyncConnectionHandler for EchoHandler {
+    fn handle(&self, conn: Connection) -> synclaire::error::Result<()> {
+        use std::io::{Read, Write};
+        let peer = conn.peer_addr();
+        log::info!("[backend] new connection from {}", peer);
+        let mut stream = conn.into_stream().into_sync().expect("sync stream");
+        let mut buf = vec![0u8; 4096];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if let Err(e) = stream.write_all(&buf[..n]) {
+                        log::error!("[backend] write error: {}", e);
+                        return Err(e.into());
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
+                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => {
+                    log::error!("[backend] read error: {}", e);
+                    break;
+                }
             }
-            conn.shutdown().await?;
-            Ok(())
-        })
+        }
+        Ok(())
     }
 }
 

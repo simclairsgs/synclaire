@@ -12,7 +12,7 @@ use log::info;
 use crate::{
     config::ServerConfig,
     guard::GuardContext,
-    handler::{attach_guard_session, Connection, ConnectionHandler},
+    handler::{attach_guard_session, Connection, SyncConnectionHandler},
     server::{build_guard_stack, tcp, tls},
     SynError,
 };
@@ -97,7 +97,7 @@ pub struct SyncServer<H> {
 
 impl<H> SyncServer<H>
 where
-    H: ConnectionHandler,
+    H: SyncConnectionHandler,
 {
     pub fn shutdown_channel() -> (SyncServerShutdown, SyncShutdownSignal) {
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -198,7 +198,7 @@ fn handle_sync_connection<H>(
     handler: Arc<H>,
 ) -> Result<(), SynError>
 where
-    H: ConnectionHandler,
+    H: SyncConnectionHandler,
 {
     // Enforce connection_timeout for I/O operations on this socket.
     let timeout = Some(config.connection_timeout);
@@ -220,5 +220,5 @@ where
     guard_session.mark_established()?;
     let connection = attach_guard_session(connection, guard_session);
 
-    futures::executor::block_on(handler.handle(connection))
+    handler.handle(connection)
 }

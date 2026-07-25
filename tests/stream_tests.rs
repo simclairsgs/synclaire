@@ -230,3 +230,59 @@ async fn handler_closure_receives_concrete_tcp_stream() {
     let is_tls = got_tls.lock().unwrap().unwrap_or(true);
     assert!(!is_tls, "plain TCP should not report is_tls");
 }
+
+// ------------------------------------------------------------------
+// SyncConnectionHandler trait smoke test (I4 fix)
+// ------------------------------------------------------------------
+
+#[cfg(feature = "sync")]
+#[test]
+fn sync_server_accepts_sync_handler() {
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        thread,
+        time::Duration,
+    };
+    use synclaire::{
+        handler::{Connection, SyncConnectionHandler},
+        server::sync_server::SyncServer,
+        SynError,
+        ServerConfig,
+    };
+
+    struct EchoHandler {
+        handled: Arc<AtomicBool>,
+    }
+
+    impl SyncConnectionHandler for EchoHandler {
+        fn handle(&self, _conn: Connection) -> Result<(), SynError> {
+            self.handled.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    let handled = Arc::new(AtomicBool::new(false));
+    let handler = EchoHandler { handled: Arc::clone(&handled) };
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let config = ServerConfig { bind_addr: addr, ..Default::default() };
+    let (shutdown_tx, shutdown_rx) = SyncServer::<EchoHandler>::shutdown_channel();
+
+    let server_thread = thread::spawn(move || {
+        SyncServer::new(config, handler).run_until_shutdown(shutdown_rx).ok();
+    });
+
+    thread::sleep(Duration::from_millis(50));
+    let _conn = std::net::TcpStream::connect(addr).unwrap();
+    thread::sleep(Duration::from_millis(100));
+    shutdown_tx.shutdown();
+    server_thread.join().ok();
+
+    assert!(handled.load(Ordering::SeqCst), "sync handler was called");
+}

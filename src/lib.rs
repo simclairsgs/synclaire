@@ -35,6 +35,8 @@ pub use connection_filter::{
 
 #[cfg(feature = "sync")]
 pub use handler::SyncStream;
+#[cfg(feature = "sync")]
+pub use handler::SyncConnectionHandler;
 
 pub type Result<T> = std::result::Result<T, SynError>;
 

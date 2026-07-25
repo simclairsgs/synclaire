@@ -462,6 +462,26 @@ where
     }
 }
 
+/// Handler trait for use with [`SyncServer`].
+///
+/// Unlike [`ConnectionHandler`], this is a synchronous call — you may not call
+/// any Tokio async primitives inside the implementation. If you need async I/O
+/// in a sync-server context, run your own `tokio::runtime::Handle` explicitly.
+#[cfg(feature = "sync")]
+pub trait SyncConnectionHandler: Send + Sync + 'static {
+    fn handle(&self, connection: Connection) -> HandlerResult;
+}
+
+#[cfg(feature = "sync")]
+impl<F> SyncConnectionHandler for F
+where
+    F: Fn(Connection) -> HandlerResult + Send + Sync + 'static,
+{
+    fn handle(&self, connection: Connection) -> HandlerResult {
+        (self)(connection)
+    }
+}
+
 pub(crate) fn attach_guard_session(connection: Connection, guard_session: GuardSession) -> Connection {
     connection.with_guard_session(guard_session)
 }

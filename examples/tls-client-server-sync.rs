@@ -11,38 +11,40 @@
 
 use std::env;
 
+use std::io::{Read, Write};
 use synclaire::{
     config::{ClientConfig, ServerConfig, TlsConfig},
-    handler::ConnectionHandler,
+    handler::SyncConnectionHandler,
     PemSource, SyncServer, SynError,
 };
 
 struct EchoHandler;
 
-impl ConnectionHandler for EchoHandler {
-    fn handle<'a>(
-        &'a self,
-        mut conn: synclaire::Connection,
-    ) -> synclaire::handler::HandlerFuture<'a> {
-        Box::pin(async move {
-            let mut buf = [0u8; 1024];
-            loop {
-                match conn.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        println!("Received {} bytes (TLS) from {}", n, conn.peer_addr());
-                        conn.write_all(&buf[..n]).await?;
-                    }
-                    Err(e) => {
-                        eprintln!("Read error: {}", e);
-                        break;
+impl SyncConnectionHandler for EchoHandler {
+    fn handle(&self, conn: synclaire::Connection) -> synclaire::error::Result<()> {
+        let peer = conn.peer_addr();
+        let mut stream = conn.into_stream().into_sync().expect("sync stream");
+        let mut buf = [0u8; 1024];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    println!("Received {} bytes (TLS) from {}", n, peer);
+                    if let Err(e) = stream.write_all(&buf[..n]) {
+                        eprintln!("Write error: {}", e);
+                        return Err(e.into());
                     }
                 }
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
+                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => {
+                    eprintln!("Read error: {}", e);
+                    break;
+                }
             }
-
-            println!("TLS connection closed: {}", conn.peer_addr());
-            Ok(())
-        })
+        }
+        println!("TLS connection closed: {}", peer);
+        Ok(())
     }
 }
 
