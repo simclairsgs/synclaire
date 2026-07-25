@@ -78,7 +78,7 @@ impl SynGuard {
             }
         }
 
-        state.total = next_total;
+        state.total = state.total + 1;
         if is_new_ip {
             state.ip_order.push_back(ip);
         }
@@ -101,6 +101,7 @@ impl SynGuard {
             } else {
                 state.per_ip.remove(&ip);
                 state.started_at.remove(&ip);
+                state.ip_order.retain(|a| *a != ip);
             }
         }
 
@@ -125,6 +126,7 @@ impl SynGuard {
             } else {
                 state.per_ip.remove(&ip);
                 state.started_at.remove(&ip);
+                state.ip_order.retain(|a| *a != ip);
             }
         }
     }
@@ -198,5 +200,27 @@ mod tests {
 
         // The global counter should now be 0, allowing another connection.
         guard.on_reserve(&ctx(1002)).expect("slot free after established close");
+    }
+
+    #[test]
+    fn per_ip_map_does_not_exceed_max_tracked_ips() {
+        use std::net::Ipv4Addr;
+        let guard = SynGuard::new(SynGuardConfig {
+            max_tracked_ips: 3,
+            max_half_open_global: 100,
+            max_half_open_per_ip: 100,
+            ..Default::default()
+        });
+
+        for i in 1u32..=4 {
+            let ip = IpAddr::V4(Ipv4Addr::from(i));
+            let addr = SocketAddr::new(ip, 1000 + i as u16);
+            let c = GuardContext::new(addr, None, false);
+            let _ = guard.on_reserve(&c); // May succeed or fail — we only care about map size
+        }
+
+        let state = guard.state.lock();
+        assert!(state.per_ip.len() <= 3, "per_ip grew to {}", state.per_ip.len());
+        assert!(state.ip_order.len() <= 3, "ip_order grew to {}", state.ip_order.len());
     }
 }
