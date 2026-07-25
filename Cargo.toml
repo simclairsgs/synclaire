@@ -9,10 +9,9 @@ readme = "README.md"
 documentation = "https://docs.rs/synclaire"
 repository = "https://github.com/simclairsgs/synclaire"
 homepage = "https://github.com/simclairsgs/synclaire"
-keywords = ["tcp", "tls", "proxy", "client", "server"]
+keywords = ["tcp", "tls", "mtls", "proxy", "tokio"]
 categories = ["network-programming", "asynchronous", "cryptography"]
 rust-version = "1.70"
-siminame = "Akibos"
 
 [features]
 default = ["async", "rustls-backend"]
