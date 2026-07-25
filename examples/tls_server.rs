@@ -65,6 +65,10 @@ async fn main() -> Result<(), SynError> {
         .private_key(PemSource::file("examples/certs/server.key"))
         .build();
 
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    log::info!("starting TLS echo server on port {}", port);
+
     let config = ServerConfig::builder()
         .name("tls-echo-server")
         .connection_timeout(Duration::from_secs(60))
@@ -73,8 +77,7 @@ async fn main() -> Result<(), SynError> {
         .accept_mode(AcceptMode::Tls)
         .build();
 
-    log::info!("starting TLS echo server bind={}", config.bind_addr);
-    AsyncServer::new(config, TlsEchoHandler).run().await
+    AsyncServer::from_listener(listener, config, TlsEchoHandler).run().await
 }
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
@@ -112,8 +115,16 @@ fn main() -> Result<(), SynError> {
         .private_key(PemSource::file("examples/certs/server.key"))
         .build();
 
-    let config = ServerConfig::builder().name("tls-echo-server").tls(tls).build();
-    synclaire::SyncServer::new(config, TlsEchoHandler).run()
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    log::info!("starting TLS echo server on port {}", port);
+
+    let config = ServerConfig::builder()
+        .name("tls-echo-server")
+        .bind_addr("127.0.0.1:0".parse().unwrap())
+        .tls(tls)
+        .build();
+    synclaire::SyncServer::from_listener(listener, config, TlsEchoHandler).run()
 }
 
 #[cfg(not(any(feature = "async", feature = "sync")))]

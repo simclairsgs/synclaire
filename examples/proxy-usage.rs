@@ -81,12 +81,13 @@ impl SyncConnectionHandler for EchoHandler {
 }
 
 fn run_backend_server() -> Result<(), Box<dyn std::error::Error>> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    println!("Backend (SyncServer) listening on port {}", port);
     let config = ServerConfig::builder()
         .name("proxy-backend")
-        .bind_addr("127.0.0.1:3000".parse()?)
         .build();
-    println!("Backend (SyncServer) listening on {}", config.bind_addr);
-    SyncServer::new(config, EchoHandler).run()?;
+    SyncServer::from_listener(listener, config, EchoHandler).run()?;
     Ok(())
 }
 
@@ -99,7 +100,7 @@ fn run_proxy_server() -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    let listen_addr: SocketAddr = "127.0.0.1:8080".parse()?;
+    let listen_addr: SocketAddr = "127.0.0.1:0".parse()?;
     let backend_primary: SocketAddr   = "127.0.0.1:3000".parse()?;  // main backend
     let backend_secondary: SocketAddr = "127.0.0.1:3001".parse()?;  // fallback backend
 
@@ -191,7 +192,7 @@ fn run_proxy_server_lb() -> Result<(), Box<dyn std::error::Error>> {
     use std::sync::Arc;
     use std::time::Duration;
 
-    let listen_addr: SocketAddr = "127.0.0.1:8082".parse()?;
+    let listen_addr: SocketAddr = "127.0.0.1:0".parse()?;
 
     // ─── Backend pools ────────────────────────────────────────────────────────
     //
@@ -254,7 +255,7 @@ fn run_proxy_server_async() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Duration;
     use std::sync::Arc;
 
-    let listen_addr: SocketAddr = "127.0.0.1:8081".parse()?;
+    let listen_addr: SocketAddr = "127.0.0.1:0".parse()?;
     let backend_addr: SocketAddr = "127.0.0.1:3000".parse()?;
 
     let guards = GuardStackConfig {

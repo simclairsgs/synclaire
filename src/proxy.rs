@@ -412,10 +412,11 @@ impl ProxyServer {
 
         let listener = TcpListener::bind(self.config.listen_addr)?;
         let guards = build_guard_stack(&self.config.guards);
+        let actual_listen_addr = listener.local_addr().unwrap_or(self.config.listen_addr);
 
         log::info!(
             "proxy server listening on {} forwarding to {}",
-            self.config.listen_addr,
+            actual_listen_addr,
             self.config.backend_addr
         );
 
@@ -553,10 +554,11 @@ impl AsyncProxyServer {
 
         let listener = TcpListener::bind(self.config.listen_addr).await?;
         let guards = build_guard_stack(&self.config.guards);
+        let actual_listen_addr = listener.local_addr().unwrap_or(self.config.listen_addr);
 
         log::info!(
             "async proxy server listening on {} forwarding to {}",
-            self.config.listen_addr,
+            actual_listen_addr,
             self.config.backend_addr
         );
 

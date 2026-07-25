@@ -93,6 +93,7 @@ pub struct SyncServer<H> {
     guards: crate::guard::GuardStack,
     pool: ThreadPool,
     active_connections: Arc<AtomicUsize>,
+    listener: Option<std::net::TcpListener>,
 }
 
 impl<H> SyncServer<H>
@@ -116,6 +117,25 @@ where
             guards,
             pool,
             active_connections: Arc::new(AtomicUsize::new(0)),
+            listener: None,
+        }
+    }
+
+    /// Create a server from an already-bound [`std::net::TcpListener`].
+    ///
+    /// The listener's actual local address is used instead of `config.bind_addr`,
+    /// which lets callers bind to port `0` and discover the assigned port before
+    /// starting the server.
+    pub fn from_listener(listener: std::net::TcpListener, config: ServerConfig, handler: H) -> Self {
+        let guards = build_guard_stack(&config.guards);
+        let pool = ThreadPool::new(config.worker_threads);
+        Self {
+            config,
+            handler: Arc::new(handler),
+            guards,
+            pool,
+            active_connections: Arc::new(AtomicUsize::new(0)),
+            listener: Some(listener),
         }
     }
 
@@ -128,9 +148,14 @@ where
     }
 
     fn run_internal(self, shutdown: Option<SyncShutdownSignal>) -> Result<(), SynError> {
-        let listener = std::net::TcpListener::bind(self.config.bind_addr)?;
+        let listener = if let Some(l) = self.listener {
+            l
+        } else {
+            std::net::TcpListener::bind(self.config.bind_addr)?
+        };
         listener.set_nonblocking(shutdown.is_some())?;
-        info!("server {} listening on {}", self.config.name, self.config.bind_addr);
+        let actual_addr = listener.local_addr()?;
+        info!("server {} listening on {}", self.config.name, actual_addr);
 
         loop {
             if let Some(signal) = shutdown.as_ref() {

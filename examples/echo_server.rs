@@ -73,24 +73,28 @@ async fn main() -> Result<(), SynError> {
         .try_init()
         .ok();
 
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    log::info!("starting echo server on port {}", port);
+
     let config = ServerConfig::builder()
         .name("echo-server")
-        .bind_addr("127.0.0.1:0".parse().unwrap())
         .connection_timeout(Duration::from_secs(60))
         .build();
 
-    log::info!("starting echo server bind={}", config.bind_addr);
-    AsyncServer::new(config, EchoHandler).run().await
+    AsyncServer::from_listener(listener, config, EchoHandler).run().await
 }
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
 fn main() -> Result<(), SynError> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    log::info!("starting echo server on port {}", port);
+
     let config = ServerConfig::builder()
         .name("echo-server")
-        .bind_addr("127.0.0.1:0".parse().unwrap())
         .build();
-    let server = synclaire::SyncServer::new(config, EchoHandler);
-    server.run()
+    synclaire::SyncServer::from_listener(listener, config, EchoHandler).run()
 }
 
 #[cfg(not(any(feature = "async", feature = "sync")))]

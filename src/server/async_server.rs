@@ -31,6 +31,7 @@ pub struct AsyncServer<H> {
     config: ServerConfig,
     handler: Arc<H>,
     guards: crate::guard::GuardStack,
+    listener: Option<TcpListener>,
 }
 
 impl<H> AsyncServer<H>
@@ -48,6 +49,22 @@ where
             config,
             handler: Arc::new(handler),
             guards,
+            listener: None,
+        }
+    }
+
+    /// Create a server from an already-bound [`TcpListener`].
+    ///
+    /// The listener's actual local address is used instead of `config.bind_addr`,
+    /// which lets callers bind to port `0` and discover the assigned port before
+    /// starting the server.
+    pub fn from_listener(listener: TcpListener, config: ServerConfig, handler: H) -> Self {
+        let guards = build_guard_stack(&config.guards);
+        Self {
+            config,
+            handler: Arc::new(handler),
+            guards,
+            listener: Some(listener),
         }
     }
 
@@ -60,8 +77,13 @@ where
     }
 
     async fn run_internal(self, mut shutdown: Option<watch::Receiver<bool>>) -> Result<(), SynError> {
-        let listener = TcpListener::bind(self.config.bind_addr).await?;
-        info!("server {} listening on {}", self.config.name, self.config.bind_addr);
+        let listener = if let Some(l) = self.listener {
+            l
+        } else {
+            TcpListener::bind(self.config.bind_addr).await?
+        };
+        let actual_addr = listener.local_addr()?;
+        info!("server {} listening on {}", self.config.name, actual_addr);
 
         let semaphore = Arc::new(Semaphore::new(self.config.max_connections));
 

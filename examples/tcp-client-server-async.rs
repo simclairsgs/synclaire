@@ -4,9 +4,10 @@
 // Usage:
 //   cargo run --example tcp-client-server-async --features async
 //
-// In separate terminals:
-//   Terminal 1: cargo run --example tcp-client-server-async --features async -- server
-//   Terminal 2: cargo run --example tcp-client-server-async --features async -- client <port>
+// Modes:
+//   demo   (default) — binds to an OS-assigned port, runs server + client in-process
+//   server            — stand-alone server; prints the actual port so you can pass it to the client
+//   client <port>     — connects to the server on the given port
 
 use std::env;
 use synclaire::{config::ServerConfig, handler::ConnectionHandler, AsyncServer};
@@ -46,9 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_default_env().init();
 
     let args: Vec<String> = env::args().collect();
-    let mode = args.get(1).map(|s| s.as_str()).unwrap_or("server");
+    let mode = args.get(1).map(|s| s.as_str()).unwrap_or("demo");
 
     match mode {
+        "demo" => run_demo().await,
         "server" => run_server().await,
         "client" => {
             let port = args
@@ -58,23 +60,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_client(port).await
         }
         _ => {
-            eprintln!("Usage: {} [server|client] [port for client mode]", args[0]);
+            eprintln!("Usage: {} [demo|server|client] [port for client mode]", args[0]);
             Ok(())
         }
     }
 }
 
-async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Starting TCP Echo Server (Asynchronous)...");
+async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Running TCP Client-Server Demo (Asynchronous)...");
+
+    // Bind first so we know the port before the server's accept loop starts.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    println!("Server listening on port {port}");
 
     let config = ServerConfig::builder()
         .name("tcp-async-server")
-        .bind_addr("127.0.0.1:0".parse()?)
         .build();
 
-    let server = AsyncServer::new(config, EchoHandler);
-    server.run().await?;
+    let (shutdown, rx) = AsyncServer::<EchoHandler>::shutdown_channel();
+    let server = AsyncServer::from_listener(listener, config, EchoHandler);
+    tokio::spawn(async move {
+        server.run_until_shutdown(rx).await.ok();
+    });
 
+    run_client(port).await?;
+    shutdown.shutdown()?;
+    Ok(())
+}
+
+async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Starting TCP Echo Server (Asynchronous)...");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let port = listener.local_addr()?.port();
+    println!("Server listening on port {port}");
+
+    let config = ServerConfig::builder()
+        .name("tcp-async-server")
+        .build();
+
+    AsyncServer::from_listener(listener, config, EchoHandler).run().await?;
     Ok(())
 }
 
@@ -82,7 +108,7 @@ async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     println!("Connecting to TCP Echo Server (Asynchronous) on port {}...", port);
 
     // Give server time to start
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     let config = synclaire::config::ClientConfig::builder()
         .connect_addr(format!("127.0.0.1:{}", port).parse()?)
