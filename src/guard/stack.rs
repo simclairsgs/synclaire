@@ -42,15 +42,16 @@ impl GuardStack {
                 for rollback in self.inner.guards[..accepted].iter().rev() {
                     rollback.on_close(&context);
                 }
+                let reason = err.to_string();
                 self.inner.emit(GuardEvent {
                     guard: guard.name(),
                     kind: GuardEventKind::Reserve,
                     peer_addr: context.peer_addr,
-                    decision: GuardDecision::Deny(SynError::guard_rejected(guard.name(), err.to_string())),
+                    decision: GuardDecision::Deny(SynError::guard_rejected(guard.name(), reason.clone())),
                     detail: format!("{} rejected reservation", guard.name()),
                     occurred_at: Instant::now(),
                 });
-                return Err(SynError::guard_rejected(guard.name(), err.to_string()));
+                return Err(SynError::guard_rejected(guard.name(), reason));
             }
             self.inner.emit(GuardEvent {
                 guard: guard.name(),
