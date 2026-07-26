@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use crate::metrics::MetricsCollector;
 use crate::load_balancer::BackendPool;
@@ -69,19 +71,12 @@ impl ProxyAuthHandle {
     }
 
     pub fn current(&self) -> Result<ProxyAuth, SynError> {
-        self.inner
-            .read()
-            .map(|guard| guard.clone())
-            .map_err(|_| SynError::runtime("proxy auth lock poisoned"))
+        Ok(self.inner.read().clone())
     }
 
     pub fn set(&self, auth: ProxyAuth) -> Result<(), SynError> {
-        self.inner
-            .write()
-            .map(|mut guard| {
-                *guard = auth;
-            })
-            .map_err(|_| SynError::runtime("proxy auth lock poisoned"))
+        *self.inner.write() = auth;
+        Ok(())
     }
 
     pub fn set_none(&self) -> Result<(), SynError> {
@@ -166,13 +161,12 @@ fn parse_http_auth_from_bytes(data: &[u8], auth: &ProxyAuth) -> Result<Vec<u8>, 
         .unwrap_or(data.len());
 
     let headers_raw = &data[..header_end];
-    let trailing = data[header_end..].to_vec();
     let headers = String::from_utf8_lossy(headers_raw);
 
     for line in headers.lines().skip(1) {
         if let Some(value) = line.strip_prefix("Authorization: ") {
             if auth.validate_header(value.trim()) {
-                return Ok(trailing);
+                return Ok(data[header_end..].to_vec());
             }
             return Err(SynError::authentication_error("Invalid credentials"));
         }
@@ -238,7 +232,7 @@ impl TcpProxy {
             })?;
         }
 
-        self.forward_bidirectional(&client, &backend)
+        self.forward_bidirectional(client, backend)
     }
 
     fn validate_http_auth_stream(&self, client: &mut TcpStream, auth: &ProxyAuth) -> Result<Vec<u8>, SynError> {
@@ -254,9 +248,11 @@ impl TcpProxy {
                 return Err(SynError::authentication_error("connection closed before authorization headers"));
             }
 
+            let previous_len = data.len();
             data.extend_from_slice(&chunk[..n]);
 
-            if data.windows(4).any(|w| w == b"\r\n\r\n") {
+            let search_from = previous_len.saturating_sub(3);
+            if data[search_from..].windows(4).any(|w| w == b"\r\n\r\n") {
                 break;
             }
 
@@ -268,23 +264,15 @@ impl TcpProxy {
         parse_http_auth_from_bytes(&data, auth)
     }
 
-    fn forward_bidirectional(&self, client: &TcpStream, backend: &TcpStream) -> Result<(), SynError> {
+    fn forward_bidirectional(&self, mut client: TcpStream, mut backend: TcpStream) -> Result<(), SynError> {
         use std::thread;
-
-        let mut client_clone = client.try_clone().map_err(|e| {
-            SynError::connection_error(format!("Failed to clone client: {}", e))
-        })?;
-
-        let mut backend_clone = backend.try_clone().map_err(|e| {
-            SynError::connection_error(format!("Failed to clone backend: {}", e))
-        })?;
 
         let mut client_for_reverse = client.try_clone().map_err(|e| {
             SynError::connection_error(format!("Failed to clone client for reverse: {}", e))
         })?;
 
-        let mut backend_for_reverse = backend.try_clone().map_err(|e| {
-            SynError::connection_error(format!("Failed to clone backend for reverse: {}", e))
+        let mut backend_for_forward = backend.try_clone().map_err(|e| {
+            SynError::connection_error(format!("Failed to clone backend for forward: {}", e))
         })?;
 
         let buffer_size = self.config.buffer_size;
@@ -292,10 +280,10 @@ impl TcpProxy {
         let client_to_backend = thread::spawn(move || {
             let mut buf = vec![0u8; buffer_size];
             loop {
-                match client_clone.read(&mut buf) {
+                match client.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if backend_clone.write_all(&buf[..n]).is_err() {
+                        if backend_for_forward.write_all(&buf[..n]).is_err() {
                             break;
                         }
                     }
@@ -307,7 +295,7 @@ impl TcpProxy {
         let backend_to_client = thread::spawn(move || {
             let mut buf = vec![0u8; buffer_size];
             loop {
-                match backend_for_reverse.read(&mut buf) {
+                match backend.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
                         if client_for_reverse.write_all(&buf[..n]).is_err() {
@@ -363,6 +351,11 @@ impl ProxyServer {
 
         let listener = TcpListener::bind(self.config.listen_addr)?;
         let guards = build_guard_stack(&self.config.guards);
+        let mut proxy = TcpProxy::new(self.config.clone());
+        if let Some(handle) = &self.auth_handle {
+            proxy = proxy.with_auth_handle(handle.clone());
+        }
+        let proxy = Arc::new(proxy);
         let actual_listen_addr = listener.local_addr().unwrap_or(self.config.listen_addr);
 
         log::info!(
@@ -396,6 +389,7 @@ impl ProxyServer {
                         Some(addr) => Some(addr),
                         None => {
                             log::warn!("[{}] routing pool is empty", peer_addr);
+                                                    let _ = stream.shutdown(std::net::Shutdown::Both);
                             continue;
                         }
                     },
@@ -412,6 +406,7 @@ impl ProxyServer {
                     Some(addr) => Some(addr),
                     None => {
                         log::warn!("[{}] backend pool is empty", peer_addr);
+                                                let _ = stream.shutdown(std::net::Shutdown::Both);
                         continue;
                     }
                 }
@@ -446,12 +441,8 @@ impl ProxyServer {
                 m.record_tcp_connection(Some("proxy"), peer_addr.ip());
             }
 
-            let mut proxy = TcpProxy::new(self.config.clone());
-            if let Some(handle) = &self.auth_handle {
-                proxy = proxy.with_auth_handle(handle.clone());
-            }
-
             let metrics = self.metrics.clone();
+            let proxy = Arc::clone(&proxy);
 
             std::thread::spawn(move || {
                 if let Err(error) = proxy.forward_to(stream, backend_override) {
@@ -497,6 +488,7 @@ impl AsyncProxyServer {
 
     pub async fn run(&self) -> Result<(), SynError> {
         use tokio::net::TcpListener;
+        use tokio::io::AsyncWriteExt;
 
         let listener = TcpListener::bind(self.config.listen_addr).await?;
         let guards = build_guard_stack(&self.config.guards);
@@ -509,7 +501,7 @@ impl AsyncProxyServer {
         );
 
         loop {
-            let (stream, peer_addr) = match listener.accept().await {
+            let (mut stream, peer_addr) = match listener.accept().await {
                 Ok(conn) => conn,
                 Err(e) => {
                     log::warn!("async proxy accept error: {}", e);
@@ -528,6 +520,7 @@ impl AsyncProxyServer {
                         Some(addr) => Some(addr),
                         None => {
                             log::warn!("[{}] async routing pool is empty", peer_addr);
+                                                    let _ = stream.shutdown().await;
                             continue;
                         }
                     },
@@ -544,6 +537,7 @@ impl AsyncProxyServer {
                     Some(addr) => Some(addr),
                     None => {
                         log::warn!("[{}] async backend pool is empty", peer_addr);
+                                                let _ = stream.shutdown().await;
                         continue;
                     }
                 }
@@ -642,9 +636,11 @@ async fn forward_async_connection(
                 ));
             }
 
+            let previous_len = data.len();
             data.extend_from_slice(&chunk[..read]);
-            if let Some(index) = data.windows(4).position(|w| w == b"\r\n\r\n") {
-                break index + 4;
+            let search_from = previous_len.saturating_sub(3);
+            if let Some(index) = data[search_from..].windows(4).position(|w| w == b"\r\n\r\n") {
+                break search_from + index + 4;
             }
 
             if data.len() > 64 * 1024 {
@@ -871,7 +867,7 @@ mod base64 {
 
     pub fn encode(input: &str) -> String {
         let bytes = input.as_bytes();
-        let mut output = String::new();
+        let mut output = String::with_capacity(((bytes.len() + 2) / 3) * 4);
 
         for chunk in bytes.chunks(3) {
             let b1 = chunk[0];
@@ -900,8 +896,8 @@ mod base64 {
     }
 
     pub fn decode(input: &str) -> Result<Vec<u8>, String> {
-        let mut output = Vec::new();
         let input = input.trim_end_matches('=');
+        let mut output = Vec::with_capacity((input.len() * 3) / 4 + 3);
         let mut n = 0u32;
         let mut bits = 0;
 

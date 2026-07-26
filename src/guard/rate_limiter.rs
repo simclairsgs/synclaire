@@ -92,7 +92,7 @@ impl BoundedIpMap {
             self.map.insert(ip, TokenBucket::new(capacity, refill));
             self.order.push_back(ip);
         }
-        self.map.get_mut(&ip).expect("just inserted")
+        self.map.get_mut(&ip).unwrap_or_else(|| unreachable!())
     }
 }
 

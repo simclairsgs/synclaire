@@ -51,6 +51,34 @@ impl SynGuard {
         }
     }
 
+    fn evict_oldest_tracked_ip(&self, state: &mut HalfOpenState) {
+        while let Some(old_ip) = state.ip_order.pop_front() {
+            if let Some(old_count) = state.per_ip.remove(&old_ip) {
+                state.total = state.total.saturating_sub(old_count);
+                state.started_at.remove(&old_ip);
+                break;
+            }
+        }
+    }
+
+    fn maybe_compact_ip_order(&self, state: &mut HalfOpenState) {
+        let threshold = self.config.max_tracked_ips.saturating_mul(4).max(16);
+        if state.ip_order.len() <= threshold {
+            return;
+        }
+
+        let mut seen = HashSet::with_capacity(state.per_ip.len());
+        let mut compacted = VecDeque::with_capacity(state.per_ip.len());
+
+        while let Some(ip) = state.ip_order.pop_front() {
+            if state.per_ip.contains_key(&ip) && seen.insert(ip) {
+                compacted.push_back(ip);
+            }
+        }
+
+        state.ip_order = compacted;
+    }
+
     fn reserve(&self, ip: IpAddr) -> Result<(), SynError> {
         let mut state = self.state.lock();
 
@@ -68,12 +96,7 @@ impl SynGuard {
         // Evict oldest IP entry if we are at the tracking cap (new IP only).
         let is_new_ip = !state.per_ip.contains_key(&ip);
         if is_new_ip && state.per_ip.len() >= self.config.max_tracked_ips {
-            if let Some(old_ip) = state.ip_order.pop_front() {
-                if let Some(old_count) = state.per_ip.remove(&old_ip) {
-                    state.total = state.total.saturating_sub(old_count);
-                }
-                state.started_at.remove(&old_ip);
-            }
+            self.evict_oldest_tracked_ip(&mut state);
         }
 
         state.total += 1;
@@ -82,6 +105,7 @@ impl SynGuard {
         }
         *state.per_ip.entry(ip).or_insert(0) = next_ip;
         state.started_at.entry(ip).or_insert_with(Instant::now);
+        self.maybe_compact_ip_order(&mut state);
 
         Ok(())
     }
@@ -99,7 +123,7 @@ impl SynGuard {
             } else {
                 state.per_ip.remove(&ip);
                 state.started_at.remove(&ip);
-                state.ip_order.retain(|a| *a != ip);
+                self.maybe_compact_ip_order(&mut state);
             }
         }
 
@@ -124,7 +148,7 @@ impl SynGuard {
             } else {
                 state.per_ip.remove(&ip);
                 state.started_at.remove(&ip);
-                state.ip_order.retain(|a| *a != ip);
+                self.maybe_compact_ip_order(&mut state);
             }
         }
     }

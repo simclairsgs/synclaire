@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 
 use crate::load_balancer::BackendPool;
 
@@ -192,34 +194,23 @@ impl RoutingTable {
     }
 
     pub fn add_group(&self, name: impl Into<String>, group: IpGroup) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.groups.insert(name.into(), group);
-        }
+        self.inner.write().groups.insert(name.into(), group);
     }
 
     pub fn add_rule(&self, rule: RoutingRule) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.rules.push(rule);
-        }
+        self.inner.write().rules.push(rule);
     }
 
     pub fn prepend_rule(&self, rule: RoutingRule) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.rules.insert(0, rule);
-        }
+        self.inner.write().rules.insert(0, rule);
     }
 
     pub fn set_default(&self, action: RouteAction) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.default_action = action;
-        }
+        self.inner.write().default_action = action;
     }
 
     pub fn resolve(&self, peer: SocketAddr) -> RouteAction {
-        let inner = match self.inner.read() {
-            Ok(g) => g,
-            Err(_) => return RouteAction::Reject,
-        };
+        let inner = self.inner.read();
 
         for rule in &inner.rules {
             if rule.matches(peer, &inner.groups) {
