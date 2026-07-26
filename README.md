@@ -39,7 +39,7 @@ synclaire sits between raw sockets and application protocols. You write a handle
 
 ```toml
 [dependencies]
-synclaire = "0.1"
+synclaire = "0.1.2"
 ```
 
 ### Async echo server

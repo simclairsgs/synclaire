@@ -26,9 +26,15 @@ impl Default for SlowLorisConfig {
 }
 
 struct BoundedActivityMap {
-    map: HashMap<SocketAddr, Instant>,
-    order: VecDeque<SocketAddr>,
+    map: HashMap<SocketAddr, ActivityEntry>,
+    order: VecDeque<(SocketAddr, u64)>,
     max: usize,
+    next_seq: u64,
+}
+
+struct ActivityEntry {
+    last_seen: Instant,
+    seq: u64,
 }
 
 impl BoundedActivityMap {
@@ -37,31 +43,57 @@ impl BoundedActivityMap {
             map: HashMap::new(),
             order: VecDeque::new(),
             max: max.max(1),
+            next_seq: 0,
         }
     }
 
     fn note(&mut self, addr: SocketAddr) {
-        if self.map.contains_key(&addr) {
-            self.map.insert(addr, Instant::now());
-        } else {
-            if self.map.len() >= self.max {
-                if let Some(old) = self.order.pop_front() {
-                    self.map.remove(&old);
-                }
-            }
-            self.map.insert(addr, Instant::now());
-            self.order.push_back(addr);
+        self.next_seq = self.next_seq.wrapping_add(1);
+        let seq = self.next_seq;
+        let is_new = self.map.insert(addr, ActivityEntry {
+            last_seen: Instant::now(),
+            seq,
+        }).is_none();
+
+        self.order.push_back((addr, seq));
+
+        if is_new && self.map.len() > self.max {
+            self.evict_oldest_live();
+        }
+
+        if self.order.len() > self.max.saturating_mul(4).max(16) {
+            self.compact_order();
         }
     }
 
+    fn evict_oldest_live(&mut self) {
+        while let Some((addr, seq)) = self.order.pop_front() {
+            if self.map.get(&addr).is_some_and(|entry| entry.seq == seq) {
+                self.map.remove(&addr);
+                break;
+            }
+        }
+    }
+
+    fn compact_order(&mut self) {
+        let mut compacted = VecDeque::with_capacity(self.map.len());
+        while let Some((addr, seq)) = self.order.pop_front() {
+            if self.map.get(&addr).is_some_and(|entry| entry.seq == seq) {
+                compacted.push_back((addr, seq));
+            }
+        }
+        self.order = compacted;
+    }
+
     fn get(&self, addr: &SocketAddr) -> Option<Instant> {
-        self.map.get(addr).copied()
+        self.map.get(addr).map(|entry| entry.last_seen)
     }
 
     fn remove(&mut self, addr: &SocketAddr) {
         self.map.remove(addr);
-        // Order queue cleanup on remove is O(n) but close is infrequent; acceptable.
-        self.order.retain(|a| a != addr);
+        if self.order.len() > self.max.saturating_mul(4).max(16) {
+            self.compact_order();
+        }
     }
 }
 

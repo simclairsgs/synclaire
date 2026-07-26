@@ -358,7 +358,10 @@ impl Connection {
 
     #[cfg(feature = "async")]
     pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, SynError> {
-        let stream = self.stream.as_mut().expect("stream taken").as_async_mut().expect("async stream");
+        let stream = self.stream.as_mut()
+            .ok_or_else(|| SynError::connection_error("stream taken"))?
+            .as_async_mut()
+            .ok_or_else(|| SynError::connection_error("async stream required"))?;
         let read = tokio::io::AsyncReadExt::read(stream, buf).await?;
         if read > 0 {
             if let Some(session) = &self.guard_session {
@@ -371,7 +374,10 @@ impl Connection {
     #[cfg(feature = "async")]
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), SynError> {
         {
-            let stream = self.stream.as_mut().expect("stream taken").as_async_mut().expect("async stream");
+            let stream = self.stream.as_mut()
+                .ok_or_else(|| SynError::connection_error("stream taken"))?
+                .as_async_mut()
+                .ok_or_else(|| SynError::connection_error("async stream required"))?;
             tokio::io::AsyncReadExt::read_exact(stream, buf).await?;
         }
         if let Some(session) = &self.guard_session {
@@ -401,7 +407,10 @@ impl Connection {
 
     #[cfg(feature = "async")]
     pub async fn shutdown(&mut self) -> Result<(), SynError> {
-        let stream = self.stream.as_mut().expect("stream taken").as_async_mut().expect("async stream");
+        let stream = self.stream.as_mut()
+            .ok_or_else(|| SynError::connection_error("stream taken"))?
+            .as_async_mut()
+            .ok_or_else(|| SynError::connection_error("async stream required"))?;
         tokio::io::AsyncWriteExt::shutdown(stream).await?;
         Ok(())
     }

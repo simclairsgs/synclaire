@@ -1,13 +1,14 @@
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc,
     },
     thread,
     time::Duration,
 };
 
 use log::info;
+use parking_lot::Mutex;
 
 use crate::{
     config::{AcceptMode, ServerConfig},
@@ -26,7 +27,7 @@ pub struct SyncServerShutdown {
 
 impl SyncServerShutdown {
     pub fn shutdown(&self) {
-        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.stop.store(true, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -37,7 +38,7 @@ pub struct SyncShutdownSignal {
 
 impl SyncShutdownSignal {
     fn is_shutdown_requested(&self) -> bool {
-        self.stop.load(std::sync::atomic::Ordering::SeqCst)
+        self.stop.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 
@@ -58,7 +59,7 @@ impl ThreadPool {
             let receiver = Arc::clone(&receiver);
             workers.push(thread::spawn(move || loop {
                 let job = {
-                    let guard = receiver.lock().expect("worker receiver poisoned");
+                    let guard = receiver.lock();
                     guard.recv()
                 };
 
@@ -181,9 +182,9 @@ where
             let handler = Arc::clone(&self.handler);
             let active_connections_for_job = Arc::clone(&active_connections);
 
-            let permit = active_connections.fetch_add(1, Ordering::SeqCst) + 1;
+            let permit = active_connections.fetch_add(1, Ordering::Relaxed) + 1;
             if permit > config.max_connections {
-                active_connections.fetch_sub(1, Ordering::SeqCst);
+                active_connections.fetch_sub(1, Ordering::Relaxed);
                 log::warn!("[{}] dropping connection (max_connections reached)", peer_addr);
                 continue;
             }
@@ -198,14 +199,14 @@ where
                     log::error!("[{}] connection closed with error: {}", peer_addr, error);
                 }
 
-                active_connections_for_job.fetch_sub(1, Ordering::SeqCst);
+                active_connections_for_job.fetch_sub(1, Ordering::Relaxed);
             })) {
-                active_connections.fetch_sub(1, Ordering::SeqCst);
+                active_connections.fetch_sub(1, Ordering::Relaxed);
                 return Err(error);
             }
         }
 
-        while self.active_connections.load(Ordering::SeqCst) > 0 {
+        while self.active_connections.load(Ordering::Relaxed) > 0 {
             thread::sleep(Duration::from_millis(25));
         }
 

@@ -95,18 +95,16 @@ impl MetricsCollector {
     }
 
     pub fn record_tcp_connection(&self, server_name: Option<&str>, peer_ip: IpAddr) {
-        self.tcp_total.fetch_add(1, Ordering::SeqCst);
-        self.active.fetch_add(1, Ordering::SeqCst);
+        self.tcp_total.fetch_add(1, Ordering::Relaxed);
+        self.active.fetch_add(1, Ordering::Relaxed);
 
         if let Some(name) = server_name {
             let mut per_server = self.per_server.lock();
-            per_server
-                .entry(name.to_string())
-                .and_modify(|m| {
-                    m.tcp += 1;
-                    m.active += 1;
-                })
-                .or_insert(PerServerMetrics {
+            if let Some(m) = per_server.get_mut(name) {
+                m.tcp += 1;
+                m.active += 1;
+            } else {
+                per_server.insert(name.to_string(), PerServerMetrics {
                     tcp: 1,
                     tls: 0,
                     mtls: 0,
@@ -115,6 +113,7 @@ impl MetricsCollector {
                     latency_sum_ms: 0,
                     latency_count: 0,
                 });
+            }
         }
 
         let mut per_ip = self.per_ip.lock();
@@ -134,18 +133,16 @@ impl MetricsCollector {
     }
 
     pub fn record_tls_connection(&self, server_name: Option<&str>, peer_ip: IpAddr) {
-        self.tls_total.fetch_add(1, Ordering::SeqCst);
-        self.active.fetch_add(1, Ordering::SeqCst);
+        self.tls_total.fetch_add(1, Ordering::Relaxed);
+        self.active.fetch_add(1, Ordering::Relaxed);
 
         if let Some(name) = server_name {
             let mut per_server = self.per_server.lock();
-            per_server
-                .entry(name.to_string())
-                .and_modify(|m| {
-                    m.tls += 1;
-                    m.active += 1;
-                })
-                .or_insert(PerServerMetrics {
+            if let Some(m) = per_server.get_mut(name) {
+                m.tls += 1;
+                m.active += 1;
+            } else {
+                per_server.insert(name.to_string(), PerServerMetrics {
                     tcp: 0,
                     tls: 1,
                     mtls: 0,
@@ -154,6 +151,7 @@ impl MetricsCollector {
                     latency_sum_ms: 0,
                     latency_count: 0,
                 });
+            }
         }
 
         let mut per_ip = self.per_ip.lock();
@@ -173,18 +171,16 @@ impl MetricsCollector {
     }
 
     pub fn record_mtls_connection(&self, server_name: Option<&str>, peer_ip: IpAddr) {
-        self.mtls_total.fetch_add(1, Ordering::SeqCst);
-        self.active.fetch_add(1, Ordering::SeqCst);
+        self.mtls_total.fetch_add(1, Ordering::Relaxed);
+        self.active.fetch_add(1, Ordering::Relaxed);
 
         if let Some(name) = server_name {
             let mut per_server = self.per_server.lock();
-            per_server
-                .entry(name.to_string())
-                .and_modify(|m| {
-                    m.mtls += 1;
-                    m.active += 1;
-                })
-                .or_insert(PerServerMetrics {
+            if let Some(m) = per_server.get_mut(name) {
+                m.mtls += 1;
+                m.active += 1;
+            } else {
+                per_server.insert(name.to_string(), PerServerMetrics {
                     tcp: 0,
                     tls: 0,
                     mtls: 1,
@@ -193,6 +189,7 @@ impl MetricsCollector {
                     latency_sum_ms: 0,
                     latency_count: 0,
                 });
+            }
         }
 
         let mut per_ip = self.per_ip.lock();
@@ -212,14 +209,14 @@ impl MetricsCollector {
     }
 
     pub fn record_failure(&self, server_name: Option<&str>, peer_ip: IpAddr) {
-        self.failed.fetch_add(1, Ordering::SeqCst);
+        self.failed.fetch_add(1, Ordering::Relaxed);
 
         if let Some(name) = server_name {
             let mut per_server = self.per_server.lock();
-            per_server
-                .entry(name.to_string())
-                .and_modify(|m| m.failures += 1)
-                .or_insert(PerServerMetrics {
+            if let Some(m) = per_server.get_mut(name) {
+                m.failures += 1;
+            } else {
+                per_server.insert(name.to_string(), PerServerMetrics {
                     tcp: 0,
                     tls: 0,
                     mtls: 0,
@@ -228,6 +225,7 @@ impl MetricsCollector {
                     latency_sum_ms: 0,
                     latency_count: 0,
                 });
+            }
         }
 
         let mut per_ip = self.per_ip.lock();
@@ -245,7 +243,7 @@ impl MetricsCollector {
 
     pub fn record_connection_close(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         // Saturate at 0 to prevent wrapping on double-close.
-        self.active.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+        self.active.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
             Some(v.saturating_sub(1))
         }).ok();
 
@@ -268,8 +266,8 @@ impl MetricsCollector {
 
     pub fn record_connection_latency(&self, server_name: Option<&str>, peer_ip: IpAddr, latency_ms: u64) {
         // Update global latency metrics
-        self.latency_sum_ms.fetch_add(latency_ms, Ordering::SeqCst);
-        self.latency_count.fetch_add(1, Ordering::SeqCst);
+        self.latency_sum_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.latency_count.fetch_add(1, Ordering::Relaxed);
 
         // Update min/max global latency
         {
@@ -354,9 +352,9 @@ impl MetricsCollector {
             })
             .collect();
 
-        let latency_count = self.latency_count.load(Ordering::SeqCst);
+        let latency_count = self.latency_count.load(Ordering::Relaxed);
         let avg_latency_ms = if latency_count > 0 {
-            (self.latency_sum_ms.load(Ordering::SeqCst) as f64) / (latency_count as f64)
+            (self.latency_sum_ms.load(Ordering::Relaxed) as f64) / (latency_count as f64)
         } else {
             0.0
         };
@@ -369,11 +367,11 @@ impl MetricsCollector {
         let max_latency_ms = *self.max_latency_ms.lock();
 
         ConnectionMetrics {
-            tcp_connections_total: self.tcp_total.load(Ordering::SeqCst),
-            tls_connections_total: self.tls_total.load(Ordering::SeqCst),
-            mtls_connections_total: self.mtls_total.load(Ordering::SeqCst),
-            failed_connections: self.failed.load(Ordering::SeqCst),
-            active_connections: self.active.load(Ordering::SeqCst),
+            tcp_connections_total: self.tcp_total.load(Ordering::Relaxed),
+            tls_connections_total: self.tls_total.load(Ordering::Relaxed),
+            mtls_connections_total: self.mtls_total.load(Ordering::Relaxed),
+            failed_connections: self.failed.load(Ordering::Relaxed),
+            active_connections: self.active.load(Ordering::Relaxed),
             avg_latency_ms,
             min_latency_ms,
             max_latency_ms,
@@ -391,13 +389,13 @@ impl MetricsCollector {
     }
 
     pub fn reset(&self) {
-        self.tcp_total.store(0, Ordering::SeqCst);
-        self.tls_total.store(0, Ordering::SeqCst);
-        self.mtls_total.store(0, Ordering::SeqCst);
-        self.failed.store(0, Ordering::SeqCst);
-        self.active.store(0, Ordering::SeqCst);
-        self.latency_sum_ms.store(0, Ordering::SeqCst);
-        self.latency_count.store(0, Ordering::SeqCst);
+        self.tcp_total.store(0, Ordering::Relaxed);
+        self.tls_total.store(0, Ordering::Relaxed);
+        self.mtls_total.store(0, Ordering::Relaxed);
+        self.failed.store(0, Ordering::Relaxed);
+        self.active.store(0, Ordering::Relaxed);
+        self.latency_sum_ms.store(0, Ordering::Relaxed);
+        self.latency_count.store(0, Ordering::Relaxed);
         *self.min_latency_ms.lock() = u64::MAX;
         *self.max_latency_ms.lock() = 0;
         self.per_server.lock().clear();

@@ -39,9 +39,9 @@ impl Throttle {
     }
 
     fn acquire(&self, ip: IpAddr) -> Result<(), SynError> {
-        let current_global = self.global.fetch_add(1, Ordering::SeqCst) + 1;
+        let current_global = self.global.fetch_add(1, Ordering::Relaxed) + 1;
         if current_global > self.config.max_connections_global {
-            self.global.fetch_sub(1, Ordering::SeqCst);
+            self.global.fetch_sub(1, Ordering::Relaxed);
             return Err(SynError::throttled("global", self.config.max_connections_global));
         }
 
@@ -51,7 +51,7 @@ impl Throttle {
 
         if *current_ip > self.config.max_connections_per_ip {
             *current_ip -= 1;
-            self.global.fetch_sub(1, Ordering::SeqCst);
+            self.global.fetch_sub(1, Ordering::Relaxed);
             return Err(SynError::throttled("per-ip", self.config.max_connections_per_ip));
         }
 
@@ -59,7 +59,7 @@ impl Throttle {
     }
 
     fn release(&self, ip: IpAddr) {
-        self.global.fetch_sub(1, Ordering::SeqCst);
+        self.global.fetch_sub(1, Ordering::Relaxed);
         let mut per_ip = self.per_ip.lock();
         if let Some(count) = per_ip.get_mut(&ip) {
             if *count > 1 {
