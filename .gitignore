@@ -8,3 +8,5 @@ examples/certs/
 
 # macOS
 .DS_Store
+
+.env

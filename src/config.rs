@@ -68,7 +68,7 @@ impl Default for TlsConfig {
             client_certificate_chain: None,
             client_private_key: None,
             trust_anchors: Vec::new(),
-            alpn_protocols: vec!["synclaire/1".to_string()],
+            alpn_protocols: vec!["h2".to_string(), "http/1.1".to_string()],
             verify_peer: true,
             use_system_roots: true,
             require_client_auth: false,
