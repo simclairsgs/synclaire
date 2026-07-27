@@ -2,7 +2,10 @@ use std::{collections::HashSet, net::IpAddr};
 
 use parking_lot::Mutex;
 
-use crate::{guard::{Guard, GuardContext}, SynError};
+use crate::{
+    guard::{Guard, GuardContext},
+    SynError,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct IpBanConfig {}
@@ -29,7 +32,6 @@ impl IpBan {
     pub fn is_banned(&self, ip: &IpAddr) -> bool {
         self.banned.lock().contains(ip)
     }
-
 }
 
 impl Guard for IpBan {

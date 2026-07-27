@@ -1,7 +1,10 @@
 #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
 use crate::{config::TlsConfig, error::SynError, tls as syn_tls};
 
-#[cfg(all(feature = "async", any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+#[cfg(all(
+    feature = "async",
+    any(feature = "rustls-backend", feature = "aws-lc-backend")
+))]
 pub async fn accept_async(
     stream: tokio::net::TcpStream,
     config: &TlsConfig,
@@ -11,7 +14,10 @@ pub async fn accept_async(
     Ok(tls_stream)
 }
 
-#[cfg(all(feature = "sync", any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+#[cfg(all(
+    feature = "sync",
+    any(feature = "rustls-backend", feature = "aws-lc-backend")
+))]
 pub fn accept_sync(
     stream: std::net::TcpStream,
     config: &TlsConfig,

@@ -25,7 +25,12 @@ impl ConnectionHandler for EchoHandler {
                 match conn.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        println!("Received {} bytes ({}) from {}", n, protocol, conn.peer_addr());
+                        println!(
+                            "Received {} bytes ({}) from {}",
+                            n,
+                            protocol,
+                            conn.peer_addr()
+                        );
                         conn.write_all(&buf[..n]).await?;
                     }
                     Err(e) => {
@@ -47,10 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = env::args().collect();
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("demo");
-    let port = args
-        .get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9008);
+    let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(9008);
 
     match mode {
         "demo" => run_demo().await,
@@ -117,12 +119,17 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .accept_mode(AcceptMode::Mixed)
         .build();
 
-    AsyncServer::from_listener(listener, config, EchoHandler).run().await?;
+    AsyncServer::from_listener(listener, config, EchoHandler)
+        .run()
+        .await?;
     Ok(())
 }
 
 async fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to Mixed-Mode Server (Asynchronous) with plain TCP on port {}...", port);
+    println!(
+        "Connecting to Mixed-Mode Server (Asynchronous) with plain TCP on port {}...",
+        port
+    );
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
@@ -144,7 +151,10 @@ async fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to Mixed-Mode Server (Asynchronous) with TLS on port {}...", port);
+    println!(
+        "Connecting to Mixed-Mode Server (Asynchronous) with TLS on port {}...",
+        port
+    );
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 

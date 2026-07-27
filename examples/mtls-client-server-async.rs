@@ -20,7 +20,10 @@ impl ConnectionHandler for EchoHandler {
             let mut buf = [0u8; 1024];
 
             if conn.is_tls() {
-                println!("Accepted mTLS connection from {} (client authenticated)", conn.peer_addr());
+                println!(
+                    "Accepted mTLS connection from {} (client authenticated)",
+                    conn.peer_addr()
+                );
             }
 
             loop {
@@ -54,14 +57,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "demo" => run_demo().await,
         "server" => run_server().await,
         "client" => {
-            let port = args
-                .get(2)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(9006);
+            let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(9006);
             run_client(port).await
         }
         _ => {
-            eprintln!("Usage: {} [demo|server|client] [port for client mode]", args[0]);
+            eprintln!(
+                "Usage: {} [demo|server|client] [port for client mode]",
+                args[0]
+            );
             Ok(())
         }
     }
@@ -119,12 +122,17 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .tls(tls_config)
         .build();
 
-    AsyncServer::from_listener(listener, config, EchoHandler).run().await?;
+    AsyncServer::from_listener(listener, config, EchoHandler)
+        .run()
+        .await?;
     Ok(())
 }
 
 async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to mTLS Echo Server (Asynchronous - Mutual Authentication) on port {}...", port);
+    println!(
+        "Connecting to mTLS Echo Server (Asynchronous - Mutual Authentication) on port {}...",
+        port
+    );
 
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -143,7 +151,10 @@ async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     let mut conn = synclaire::AsyncClient::new(config).connect().await?;
-    println!("Connected via mTLS to server: {} (server verified)", conn.peer_addr());
+    println!(
+        "Connected via mTLS to server: {} (server verified)",
+        conn.peer_addr()
+    );
 
     // Send test message over mTLS
     let message = b"Hello from mTLS Async Client (mutually authenticated)!";

@@ -10,6 +10,8 @@ use std::{
 use log::info;
 use parking_lot::Mutex;
 
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+use crate::server::tls;
 use crate::{
     config::{AcceptMode, ServerConfig},
     guard::GuardContext,
@@ -17,8 +19,6 @@ use crate::{
     server::{build_guard_stack, tcp},
     SynError,
 };
-#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
-use crate::server::tls;
 
 #[derive(Clone, Debug)]
 pub struct SyncServerShutdown {
@@ -74,7 +74,9 @@ impl ThreadPool {
     }
 
     fn execute(&self, job: Job) -> Result<(), SynError> {
-        self.sender.send(job).map_err(|error| SynError::runtime(error.to_string()))
+        self.sender
+            .send(job)
+            .map_err(|error| SynError::runtime(error.to_string()))
     }
 }
 
@@ -106,7 +108,9 @@ where
     pub fn shutdown_channel() -> (SyncServerShutdown, SyncShutdownSignal) {
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         (
-            SyncServerShutdown { stop: Arc::clone(&stop) },
+            SyncServerShutdown {
+                stop: Arc::clone(&stop),
+            },
             SyncShutdownSignal { stop },
         )
     }
@@ -124,7 +128,11 @@ where
         }
     }
 
-    pub fn from_listener(listener: std::net::TcpListener, config: ServerConfig, handler: H) -> Self {
+    pub fn from_listener(
+        listener: std::net::TcpListener,
+        config: ServerConfig,
+        handler: H,
+    ) -> Self {
         let guards = build_guard_stack(&config.guards);
         let pool = ThreadPool::new(config.worker_threads);
         Self {
@@ -185,7 +193,10 @@ where
             let permit = active_connections.fetch_add(1, Ordering::Relaxed) + 1;
             if permit > config.max_connections {
                 active_connections.fetch_sub(1, Ordering::Relaxed);
-                log::warn!("[{}] dropping connection (max_connections reached)", peer_addr);
+                log::warn!(
+                    "[{}] dropping connection (max_connections reached)",
+                    peer_addr
+                );
                 continue;
             }
 

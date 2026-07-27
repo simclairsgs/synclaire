@@ -7,8 +7,8 @@ use std::{
 
 use synclaire::guard::{
     event_detail, Guard, GuardContext, GuardEvent, GuardEventKind, GuardStack, IpBan, IpBanConfig,
-    RateLimiter, RateLimiterConfig, SlowLoris, SlowLorisConfig, SynGuard, SynGuardConfig,
-    Throttle, ThrottleConfig, UdpAmplificationConfig, UdpAmplificationGuard,
+    RateLimiter, RateLimiterConfig, SlowLoris, SlowLorisConfig, SynGuard, SynGuardConfig, Throttle,
+    ThrottleConfig, UdpAmplificationConfig, UdpAmplificationGuard,
 };
 
 fn context(ip_port: &str) -> GuardContext {
@@ -118,18 +118,32 @@ fn guard_stack_emits_structured_events() {
         })
         .build();
 
-    let session = stack.reserve(context("127.0.0.1:4005")).expect("reserve should pass");
+    let session = stack
+        .reserve(context("127.0.0.1:4005"))
+        .expect("reserve should pass");
     session.mark_established().expect("establish should pass");
-    session.record_payload(b"hello").expect("payload should pass");
+    session
+        .record_payload(b"hello")
+        .expect("payload should pass");
     session.touch().expect("activity should pass");
     session.close();
 
     let events = events.lock().expect("event list lock");
-    assert!(events.iter().any(|kind| matches!(kind, GuardEventKind::Reserve)));
-    assert!(events.iter().any(|kind| matches!(kind, GuardEventKind::Established)));
-    assert!(events.iter().any(|kind| matches!(kind, GuardEventKind::Payload)));
-    assert!(events.iter().any(|kind| matches!(kind, GuardEventKind::Activity)));
-    assert!(events.iter().any(|kind| matches!(kind, GuardEventKind::Close)));
+    assert!(events
+        .iter()
+        .any(|kind| matches!(kind, GuardEventKind::Reserve)));
+    assert!(events
+        .iter()
+        .any(|kind| matches!(kind, GuardEventKind::Established)));
+    assert!(events
+        .iter()
+        .any(|kind| matches!(kind, GuardEventKind::Payload)));
+    assert!(events
+        .iter()
+        .any(|kind| matches!(kind, GuardEventKind::Activity)));
+    assert!(events
+        .iter()
+        .any(|kind| matches!(kind, GuardEventKind::Close)));
 }
 
 #[test]

@@ -16,7 +16,9 @@ pub struct IpWhitelistFilter {
 
 impl IpWhitelistFilter {
     pub fn new(allowed_ips: impl IntoIterator<Item = std::net::IpAddr>) -> Self {
-        Self { allowed_ips: allowed_ips.into_iter().collect() }
+        Self {
+            allowed_ips: allowed_ips.into_iter().collect(),
+        }
     }
 }
 
@@ -36,7 +38,9 @@ pub struct IpBlocklistFilter {
 
 impl IpBlocklistFilter {
     pub fn new(blocked_ips: impl IntoIterator<Item = std::net::IpAddr>) -> Self {
-        Self { blocked_ips: blocked_ips.into_iter().collect() }
+        Self {
+            blocked_ips: blocked_ips.into_iter().collect(),
+        }
     }
 }
 
@@ -57,7 +61,7 @@ impl ConnectionFilter for TlsOnlyFilter {
         if conn.metadata().tls {
             Ok(())
         } else {
-               Err(SynError::runtime("TLS required for this connection"))
+            Err(SynError::runtime("TLS required for this connection"))
         }
     }
 }
@@ -68,7 +72,9 @@ pub struct CompositeFilter {
 
 impl CompositeFilter {
     pub fn new() -> Self {
-        Self { filters: Vec::new() }
+        Self {
+            filters: Vec::new(),
+        }
     }
 
     pub fn add_filter(mut self, filter: BoxedConnectionFilter) -> Self {

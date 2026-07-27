@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use log::info;
 use tokio::{
     net::TcpListener,
     sync::{watch, Semaphore},
 };
-use log::info;
 
+#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
+use crate::server::tls;
 use crate::{
     config::{AcceptMode, ServerConfig},
     guard::GuardContext,
@@ -13,8 +15,6 @@ use crate::{
     server::{build_guard_stack, tcp},
     SynError,
 };
-#[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
-use crate::server::tls;
 
 #[derive(Clone, Debug)]
 pub struct AsyncServerShutdown {
@@ -73,7 +73,10 @@ where
         self.run_internal(Some(shutdown)).await
     }
 
-    async fn run_internal(self, mut shutdown: Option<watch::Receiver<bool>>) -> Result<(), SynError> {
+    async fn run_internal(
+        self,
+        mut shutdown: Option<watch::Receiver<bool>>,
+    ) -> Result<(), SynError> {
         let listener = if let Some(l) = self.listener {
             l
         } else {
@@ -105,13 +108,17 @@ where
             let permit = match semaphore.clone().try_acquire_owned() {
                 Ok(permit) => permit,
                 Err(_) => {
-                    log::warn!("[{}] dropping connection (max_connections reached)", peer_addr);
+                    log::warn!(
+                        "[{}] dropping connection (max_connections reached)",
+                        peer_addr
+                    );
                     continue;
                 }
             };
 
             let local_addr = stream.local_addr().ok();
-            let is_tls_expected = self.config.tls.enabled || self.config.accept_mode == AcceptMode::Tls;
+            let is_tls_expected =
+                self.config.tls.enabled || self.config.accept_mode == AcceptMode::Tls;
             let context = GuardContext::new(peer_addr, local_addr, is_tls_expected);
             let guard_session = match self.guards.reserve(context.clone()) {
                 Ok(session) => session,
@@ -129,8 +136,16 @@ where
             tokio::spawn(async move {
                 match tokio::time::timeout(
                     timeout,
-                    handle_async_connection(stream, context.clone(), guard_session, config, handler),
-                ).await {
+                    handle_async_connection(
+                        stream,
+                        context.clone(),
+                        guard_session,
+                        config,
+                        handler,
+                    ),
+                )
+                .await
+                {
                     Ok(Err(error)) => {
                         log::error!("[{}] connection closed with error: {}", peer_addr, error);
                     }

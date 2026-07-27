@@ -22,8 +22,12 @@ impl SyncConnectionHandler for EchoHandler {
                         return Err(e.into());
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
-                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    break
+                }
                 Err(e) => {
                     eprintln!("Read error: {}", e);
                     break;
@@ -45,14 +49,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "demo" => run_demo(),
         "server" => run_server(),
         "client" => {
-            let port = args
-                .get(2)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(9001);
+            let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(9001);
             run_client(port)
         }
         _ => {
-            eprintln!("Usage: {} [demo|server|client] [port for client mode]", args[0]);
+            eprintln!(
+                "Usage: {} [demo|server|client] [port for client mode]",
+                args[0]
+            );
             Ok(())
         }
     }
@@ -68,15 +72,15 @@ fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     let port = listener.local_addr()?.port();
     println!("Server listening on port {}", port);
 
-    let config = ServerConfig::builder()
-        .name("tcp-sync-server")
-        .build();
+    let config = ServerConfig::builder().name("tcp-sync-server").build();
 
     let (shutdown, signal) = SyncServer::<EchoHandler>::shutdown_channel();
     let server = SyncServer::from_listener(listener, config, EchoHandler);
 
     let server_thread = thread::spawn(move || {
-        server.run_until_shutdown(signal).unwrap_or_else(|e| eprintln!("Server error: {}", e));
+        server
+            .run_until_shutdown(signal)
+            .unwrap_or_else(|e| eprintln!("Server error: {}", e));
     });
 
     run_client(port).unwrap_or_else(|e| eprintln!("Client error: {}", e));
@@ -93,9 +97,7 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let port = listener.local_addr()?.port();
     println!("Server listening on port {}", port);
 
-    let config = ServerConfig::builder()
-        .name("tcp-sync-server")
-        .build();
+    let config = ServerConfig::builder().name("tcp-sync-server").build();
 
     SyncServer::from_listener(listener, config, EchoHandler).run()?;
     Ok(())
@@ -106,7 +108,10 @@ fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    println!("Connecting to TCP Echo Server (Synchronous) on port {}...", port);
+    println!(
+        "Connecting to TCP Echo Server (Synchronous) on port {}...",
+        port
+    );
     thread::sleep(Duration::from_millis(100));
 
     let config = synclaire::config::ClientConfig::builder()

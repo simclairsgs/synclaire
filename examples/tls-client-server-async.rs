@@ -50,14 +50,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "demo" => run_demo().await,
         "server" => run_server().await,
         "client" => {
-            let port = args
-                .get(2)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(9004);
+            let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(9004);
             run_client(port).await
         }
         _ => {
-            eprintln!("Usage: {} [demo|server|client] [port for client mode]", args[0]);
+            eprintln!(
+                "Usage: {} [demo|server|client] [port for client mode]",
+                args[0]
+            );
             Ok(())
         }
     }
@@ -111,12 +111,17 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .tls(tls_config)
         .build();
 
-    AsyncServer::from_listener(listener, config, EchoHandler).run().await?;
+    AsyncServer::from_listener(listener, config, EchoHandler)
+        .run()
+        .await?;
     Ok(())
 }
 
 async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to TLS Echo Server (Asynchronous) on port {}...", port);
+    println!(
+        "Connecting to TLS Echo Server (Asynchronous) on port {}...",
+        port
+    );
 
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

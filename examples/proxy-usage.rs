@@ -5,13 +5,12 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use synclaire::{
-    Backend, BackendPool, Connection, GuardStackConfig, IpGroup, IpPrefix,
-    MetricsCollector, ProxyAuth, ProxyAuthHandle, ProxyClient, ProxyConfig, ProxyServer,
-    RateLimiterConfig, RouteAction, RoutingRule, RoutingTable, ServerConfig, StickyKey,
-    SyncServer,
-};
 use synclaire::SyncConnectionHandler;
+use synclaire::{
+    Backend, BackendPool, Connection, GuardStackConfig, IpGroup, IpPrefix, MetricsCollector,
+    ProxyAuth, ProxyAuthHandle, ProxyClient, ProxyConfig, ProxyServer, RateLimiterConfig,
+    RouteAction, RoutingRule, RoutingTable, ServerConfig, StickyKey, SyncServer,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_default_env().init();
@@ -73,8 +72,12 @@ impl SyncConnectionHandler for EchoHandler {
                         return Err(e.into());
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
-                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    break
+                }
                 Err(e) => {
                     log::error!("[backend] read error: {}", e);
                     break;
@@ -89,9 +92,7 @@ fn run_backend_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     println!("Backend (SyncServer) listening on port {}", port);
-    let config = ServerConfig::builder()
-        .name("proxy-backend")
-        .build();
+    let config = ServerConfig::builder().name("proxy-backend").build();
     SyncServer::from_listener(listener, config, EchoHandler).run()?;
     Ok(())
 }
@@ -106,9 +107,7 @@ fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     let backend_port = backend_listener.local_addr()?.port();
     println!("Backend echo server on port {}", backend_port);
 
-    let backend_config = ServerConfig::builder()
-        .name("proxy-backend-demo")
-        .build();
+    let backend_config = ServerConfig::builder().name("proxy-backend-demo").build();
     let (backend_shutdown, signal) = SyncServer::<EchoHandler>::shutdown_channel();
     let backend = SyncServer::from_listener(backend_listener, backend_config, EchoHandler);
     thread::spawn(move || {
@@ -135,7 +134,10 @@ fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
         let tmp = std::net::TcpListener::bind("127.0.0.1:0")?;
         tmp.local_addr()?.port()
     };
-    println!("Proxy server on port {} → backend port {}", proxy_port, backend_port);
+    println!(
+        "Proxy server on port {} → backend port {}",
+        proxy_port, backend_port
+    );
 
     let config = ProxyConfig::new(format!("127.0.0.1:{}", proxy_port).parse()?, backend_addr)
         .with_auth(ProxyAuth::basic("admin", "password123"))
@@ -144,7 +146,9 @@ fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
 
     let server = ProxyServer::new(config);
     thread::spawn(move || {
-        server.run().unwrap_or_else(|e| eprintln!("[demo] proxy error: {}", e));
+        server
+            .run()
+            .unwrap_or_else(|e| eprintln!("[demo] proxy error: {}", e));
     });
 
     thread::sleep(Duration::from_millis(200));
@@ -182,8 +186,11 @@ fn run_proxy_server(backend_port: u16) -> Result<(), Box<dyn std::error::Error>>
             .from_group("loopback"),
     );
     routing.add_rule(
-        RoutingRule::new("trusted-to-secondary", RouteAction::Forward(backend_secondary))
-            .from_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))),
+        RoutingRule::new(
+            "trusted-to-secondary",
+            RouteAction::Forward(backend_secondary),
+        )
+        .from_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))),
     );
     println!(
         "Routing table: loopback → :{} | 192.168.1.100 → :3001 | else → Reject",
@@ -264,16 +271,19 @@ fn run_proxy_server_lb() -> Result<(), Box<dyn std::error::Error>> {
         StickyKey::Ip,
     ));
 
-    let routing = Arc::new(RoutingTable::new(
-        RouteAction::Pool(Arc::clone(&api_cluster)),
-    ));
+    let routing = Arc::new(RoutingTable::new(RouteAction::Pool(Arc::clone(
+        &api_cluster,
+    ))));
     routing.add_group(
         "internal",
         IpGroup::new().add_prefix(IpPrefix::v4(10, 0, 0, 0, 24)),
     );
     routing.add_rule(
-        RoutingRule::new("internal-sticky", RouteAction::Pool(Arc::clone(&session_cluster)))
-            .from_group("internal"),
+        RoutingRule::new(
+            "internal-sticky",
+            RouteAction::Pool(Arc::clone(&session_cluster)),
+        )
+        .from_group("internal"),
     );
 
     println!("LB proxy on {}:", listen_addr);
@@ -284,7 +294,10 @@ fn run_proxy_server_lb() -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(60));
         api_pool_ref.add_backend("127.0.0.1:9004".parse::<SocketAddr>().unwrap());
-        println!("[LB] scaled out api-cluster: added :9004 (now {} backends)", api_pool_ref.len());
+        println!(
+            "[LB] scaled out api-cluster: added :9004 (now {} backends)",
+            api_pool_ref.len()
+        );
     });
 
     let config = ProxyConfig::new(listen_addr, "127.0.0.1:9001".parse()?)
@@ -297,9 +310,9 @@ fn run_proxy_server_lb() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "async")]
 fn run_proxy_server_async() -> Result<(), Box<dyn std::error::Error>> {
-    use synclaire::{AsyncProxyServer, PemSource, TlsConfig};
-    use std::time::Duration;
     use std::sync::Arc;
+    use std::time::Duration;
+    use synclaire::{AsyncProxyServer, PemSource, TlsConfig};
 
     let listen_addr: SocketAddr = "127.0.0.1:0".parse()?;
     let backend_addr: SocketAddr = "127.0.0.1:3000".parse()?;
@@ -376,7 +389,10 @@ fn run_proxy_server_async() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_proxy_client(proxy_port: u16, payload: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn run_proxy_client(
+    proxy_port: u16,
+    payload: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let proxy_addr: SocketAddr = format!("127.0.0.1:{}", proxy_port).parse()?;
     let backend_addr: SocketAddr = "127.0.0.1:3000".parse()?;
     let payload = payload.unwrap_or_else(|| "hello from proxy client".to_string());
@@ -386,7 +402,10 @@ fn run_proxy_client(proxy_port: u16, payload: Option<String>) -> Result<(), Box<
 
     let response = client.send_and_receive(payload.as_bytes())?;
     println!("Proxy client sent: {}", payload);
-    println!("Proxy client received: {}", String::from_utf8_lossy(&response));
+    println!(
+        "Proxy client received: {}",
+        String::from_utf8_lossy(&response)
+    );
     Ok(())
 }
 

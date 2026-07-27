@@ -19,7 +19,10 @@ pub enum SynError {
     AddrParse(#[from] AddrParseError),
 
     #[error("timeout after {after:?} while {context}")]
-    Timeout { after: Duration, context: &'static str },
+    Timeout {
+        after: Duration,
+        context: &'static str,
+    },
 
     #[error("rate limited: {scope} for {key}")]
     RateLimited { scope: &'static str, key: String },

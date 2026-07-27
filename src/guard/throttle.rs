@@ -6,7 +6,10 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{guard::{Guard, GuardContext}, SynError};
+use crate::{
+    guard::{Guard, GuardContext},
+    SynError,
+};
 
 #[derive(Clone, Debug)]
 pub struct ThrottleConfig {
@@ -42,7 +45,10 @@ impl Throttle {
         let current_global = self.global.fetch_add(1, Ordering::Relaxed) + 1;
         if current_global > self.config.max_connections_global {
             self.global.fetch_sub(1, Ordering::Relaxed);
-            return Err(SynError::throttled("global", self.config.max_connections_global));
+            return Err(SynError::throttled(
+                "global",
+                self.config.max_connections_global,
+            ));
         }
 
         let mut per_ip = self.per_ip.lock();
@@ -52,7 +58,10 @@ impl Throttle {
         if *current_ip > self.config.max_connections_per_ip {
             *current_ip -= 1;
             self.global.fetch_sub(1, Ordering::Relaxed);
-            return Err(SynError::throttled("per-ip", self.config.max_connections_per_ip));
+            return Err(SynError::throttled(
+                "per-ip",
+                self.config.max_connections_per_ip,
+            ));
         }
 
         Ok(())

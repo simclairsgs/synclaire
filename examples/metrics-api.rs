@@ -4,7 +4,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
-use synclaire::metrics::{MetricsCollector, MetricsCallback, ConnectionMetrics};
+use synclaire::metrics::{ConnectionMetrics, MetricsCallback, MetricsCollector};
 
 fn main() {
     println!("=== Synclaire Metrics API Example ===\n");
@@ -37,15 +37,23 @@ fn main() {
     println!("\nPer-Server Metrics:");
     for (server_name, server_metrics) in &snapshot.per_server {
         println!("  Server '{}' :", server_name);
-        println!("    TCP: {}, TLS: {}, mTLS: {}", server_metrics.tcp, server_metrics.tls, server_metrics.mtls);
-        println!("    Active: {}, Failures: {}", server_metrics.active, server_metrics.failures);
+        println!(
+            "    TCP: {}, TLS: {}, mTLS: {}",
+            server_metrics.tcp, server_metrics.tls, server_metrics.mtls
+        );
+        println!(
+            "    Active: {}, Failures: {}",
+            server_metrics.active, server_metrics.failures
+        );
     }
 
     println!("\nPer-IP Metrics:");
     for (ip, ip_metrics) in &snapshot.per_ip {
         println!("  IP {} :", ip);
-        println!("    Connections: {}, Active: {}, Failures: {}", 
-                 ip_metrics.connections, ip_metrics.active, ip_metrics.failures);
+        println!(
+            "    Connections: {}, Active: {}, Failures: {}",
+            ip_metrics.connections, ip_metrics.active, ip_metrics.failures
+        );
     }
 
     println!("\n3. Registering metrics callback...");
@@ -85,13 +93,19 @@ fn main() {
     metrics.record_tls_connection(Some("web-server"), sim_ip);
 
     let snapshot = metrics.snapshot();
-    println!("  Active connections after opens: {}", snapshot.active_connections);
+    println!(
+        "  Active connections after opens: {}",
+        snapshot.active_connections
+    );
 
     println!("  Closing 1 connection...");
     metrics.record_connection_close(Some("web-server"), sim_ip);
 
     let snapshot = metrics.snapshot();
-    println!("  Active connections after close: {}", snapshot.active_connections);
+    println!(
+        "  Active connections after close: {}",
+        snapshot.active_connections
+    );
     if let Some(web_server) = snapshot.per_server.get("web-server") {
         println!("  web-server active: {}", web_server.active);
     }
@@ -130,11 +144,13 @@ fn main() {
 
     println!("\n7. Final metrics snapshot:");
     let final_snapshot = metrics.snapshot();
-    println!("Total connections: TCP={}, TLS={}, mTLS={}, Failed={}",
-             final_snapshot.tcp_connections_total,
-             final_snapshot.tls_connections_total,
-             final_snapshot.mtls_connections_total,
-             final_snapshot.failed_connections);
+    println!(
+        "Total connections: TCP={}, TLS={}, mTLS={}, Failed={}",
+        final_snapshot.tcp_connections_total,
+        final_snapshot.tls_connections_total,
+        final_snapshot.mtls_connections_total,
+        final_snapshot.failed_connections
+    );
     println!("Active: {}", final_snapshot.active_connections);
 
     println!("\n=== Example Complete ===");

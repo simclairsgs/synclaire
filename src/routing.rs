@@ -156,9 +156,10 @@ impl RoutingRule {
 
         if has_ip_criteria {
             let in_exact = self.source_ips.contains(&peer_ip);
-            let in_group = self.source_group.as_ref().is_some_and(|g| {
-                groups.get(g).is_some_and(|group| group.contains(peer_ip))
-            });
+            let in_group = self
+                .source_group
+                .as_ref()
+                .is_some_and(|g| groups.get(g).is_some_and(|group| group.contains(peer_ip)));
 
             if !in_exact && !in_group {
                 return false;
@@ -288,12 +289,9 @@ mod tests {
         );
 
         table.add_rule(
-            RoutingRule::new("internal-to-primary", backend(8001))
-                .from_group("internal"),
+            RoutingRule::new("internal-to-primary", backend(8001)).from_group("internal"),
         );
-        table.add_rule(
-            RoutingRule::new("all-to-secondary", backend(8002)),
-        );
+        table.add_rule(RoutingRule::new("all-to-secondary", backend(8002)));
 
         let internal_peer = v4(10, 0, 0, 5, 12345);
         let external_peer = v4(1, 2, 3, 4, 12345);
@@ -311,10 +309,7 @@ mod tests {
     #[test]
     fn test_routing_table_port_filter() {
         let table = RoutingTable::new(backend(9000));
-        table.add_rule(
-            RoutingRule::new("admin-port-to-mgmt", backend(8888))
-                .from_port(9999),
-        );
+        table.add_rule(RoutingRule::new("admin-port-to-mgmt", backend(8888)).from_port(9999));
 
         assert!(matches!(
             table.resolve(v4(1, 2, 3, 4, 9999)),
@@ -333,10 +328,7 @@ mod tests {
             "trusted",
             IpGroup::new().add_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
         );
-        table.add_rule(
-            RoutingRule::new("allow-trusted", backend(8080))
-                .from_group("trusted"),
-        );
+        table.add_rule(RoutingRule::new("allow-trusted", backend(8080)).from_group("trusted"));
 
         assert!(matches!(
             table.resolve(v4(127, 0, 0, 1, 9999)),

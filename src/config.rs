@@ -1,10 +1,8 @@
 use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
-use crate::{
-    guard::{
-        IpBanConfig, RateLimiterConfig, SlowLorisConfig, SynGuardConfig, ThrottleConfig,
-        UdpAmplificationConfig,
-    },
+use crate::guard::{
+    IpBanConfig, RateLimiterConfig, SlowLorisConfig, SynGuardConfig, ThrottleConfig,
+    UdpAmplificationConfig,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -132,7 +130,10 @@ impl TlsConfigBuilder {
         self
     }
 
-    pub fn alpn_protocols(mut self, protocols: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub fn alpn_protocols(
+        mut self,
+        protocols: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
         self.config.alpn_protocols = protocols.into_iter().map(|p| p.into()).collect();
         self
     }
@@ -185,7 +186,9 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "127.0.0.1:7000".parse().expect("valid default bind address"),
+            bind_addr: "127.0.0.1:7000"
+                .parse()
+                .expect("valid default bind address"),
             worker_threads: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(4),
@@ -276,7 +279,9 @@ pub struct ClientConfig {
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
-            connect_addr: "127.0.0.1:7000".parse().expect("valid default connect address"),
+            connect_addr: "127.0.0.1:7000"
+                .parse()
+                .expect("valid default connect address"),
             connection_timeout: Duration::from_secs(10),
             tcp_nodelay: true,
             tls: TlsConfig::default(),

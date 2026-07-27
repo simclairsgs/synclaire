@@ -1,7 +1,7 @@
+use parking_lot::RwLock;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum StickyKey {
@@ -13,10 +13,7 @@ pub enum StickyKey {
 #[derive(Clone, Debug)]
 pub enum LoadBalancerStrategy {
     RoundRobin,
-    ConsistentHash {
-        replicas: u32,
-        sticky: StickyKey,
-    },
+    ConsistentHash { replicas: u32, sticky: StickyKey },
 }
 
 #[derive(Clone, Debug)]
@@ -44,7 +41,7 @@ impl From<SocketAddr> for Backend {
 
 // ─── FNV-1a hash ─────────────────────────────────────────────────────────────
 const FNV_OFFSET: u64 = 14_695_981_039_346_656_037;
-const FNV_PRIME:  u64 = 1_099_511_628_211;
+const FNV_PRIME: u64 = 1_099_511_628_211;
 
 fn fnv1a(bytes: &[u8]) -> u64 {
     let mut h = FNV_OFFSET;
@@ -78,7 +75,7 @@ struct RingNode {
 struct PoolInner {
     backends: Vec<Backend>,
     strategy: LoadBalancerStrategy,
-    ring: Vec<RingNode>,          // sorted by hash, used only for ConsistentHash
+    ring: Vec<RingNode>, // sorted by hash, used only for ConsistentHash
 }
 
 impl PoolInner {
@@ -135,10 +132,7 @@ impl BackendPool {
         let counter = Arc::new(AtomicUsize::new(0));
         let mut inner = PoolInner {
             backends: backends.into_iter().map(Into::into).collect(),
-            strategy: LoadBalancerStrategy::ConsistentHash {
-                replicas,
-                sticky,
-            },
+            strategy: LoadBalancerStrategy::ConsistentHash { replicas, sticky },
             ring: Vec::new(),
         };
         inner.rebuild_ring();
@@ -194,13 +188,11 @@ impl BackendPool {
                     return Some(inner.backends[0].addr);
                 }
                 let key_hash = match sticky {
-                    StickyKey::Ip     => hash_addr_ip(peer),
+                    StickyKey::Ip => hash_addr_ip(peer),
                     StickyKey::IpPort => hash_addr_ipport(peer),
                 };
                 // Binary search for first ring node with hash >= key_hash.
-                let idx = inner
-                    .ring
-                    .partition_point(|node| node.hash < key_hash);
+                let idx = inner.ring.partition_point(|node| node.hash < key_hash);
                 // Wrap around if we're past the end of the ring.
                 let node = &inner.ring[idx % inner.ring.len()];
                 Some(inner.backends[node.backend_idx].addr)
@@ -212,8 +204,8 @@ impl BackendPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     fn addr(port: u16) -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), port)
@@ -226,7 +218,9 @@ mod tests {
     #[test]
     fn round_robin_cycles_all_backends() {
         let pool = BackendPool::round_robin([addr(8001), addr(8002), addr(8003)]);
-        let peers: Vec<_> = (0..9).map(|_| pool.select(peer(1, 1, 1, 1)).unwrap()).collect();
+        let peers: Vec<_> = (0..9)
+            .map(|_| pool.select(peer(1, 1, 1, 1)).unwrap())
+            .collect();
         // Pattern must repeat every 3.
         assert_eq!(peers[0], peers[3]);
         assert_eq!(peers[1], peers[4]);
@@ -238,25 +232,23 @@ mod tests {
 
     #[test]
     fn consistent_hash_same_ip_sticks() {
-        let pool = BackendPool::consistent_hash(
-            [addr(8001), addr(8002), addr(8003)],
-            150,
-            StickyKey::Ip,
-        );
+        let pool =
+            BackendPool::consistent_hash([addr(8001), addr(8002), addr(8003)], 150, StickyKey::Ip);
         let p = peer(192, 168, 1, 100);
         let first = pool.select(p).unwrap();
         for _ in 0..20 {
-            assert_eq!(pool.select(p).unwrap(), first, "same IP must always land on same backend");
+            assert_eq!(
+                pool.select(p).unwrap(),
+                first,
+                "same IP must always land on same backend"
+            );
         }
     }
 
     #[test]
     fn consistent_hash_different_ips_distribute() {
-        let pool = BackendPool::consistent_hash(
-            [addr(8001), addr(8002), addr(8003)],
-            150,
-            StickyKey::Ip,
-        );
+        let pool =
+            BackendPool::consistent_hash([addr(8001), addr(8002), addr(8003)], 150, StickyKey::Ip);
         let mut counts: HashMap<SocketAddr, usize> = HashMap::new();
         for i in 0u8..=255 {
             let p = peer(10, 0, 0, i);
@@ -264,7 +256,10 @@ mod tests {
         }
         // Distribution may be uneven for a small contiguous key set, but it should not
         // collapse to a single backend.
-        assert!(counts.len() >= 2, "traffic should be distributed across multiple backends");
+        assert!(
+            counts.len() >= 2,
+            "traffic should be distributed across multiple backends"
+        );
     }
 
     #[test]
@@ -286,7 +281,10 @@ mod tests {
         // and only 1 bit difference in port we verify the hashes themselves differ).
         let hash_a = super::hash_addr_ipport(peer_a);
         let hash_b = super::hash_addr_ipport(peer_b);
-        assert_ne!(hash_a, hash_b, "ip+port hashes must differ for different ports");
+        assert_ne!(
+            hash_a, hash_b,
+            "ip+port hashes must differ for different ports"
+        );
     }
 
     #[test]

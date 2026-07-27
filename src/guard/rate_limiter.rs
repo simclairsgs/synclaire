@@ -6,7 +6,10 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{guard::{Guard, GuardContext}, SynError};
+use crate::{
+    guard::{Guard, GuardContext},
+    SynError,
+};
 
 #[derive(Clone, Debug)]
 pub struct RateLimiterConfig {
@@ -56,7 +59,8 @@ impl TokenBucket {
         let elapsed = now.duration_since(self.last_refill).as_secs_f64();
         self.last_refill = now;
 
-        self.tokens = (self.tokens + elapsed * self.refill_per_second as f64).min(self.capacity as f64);
+        self.tokens =
+            (self.tokens + elapsed * self.refill_per_second as f64).min(self.capacity as f64);
         if self.tokens >= 1.0 {
             self.tokens -= 1.0;
             true
@@ -107,7 +111,10 @@ impl RateLimiter {
     pub fn new(config: RateLimiterConfig) -> Self {
         let max = config.max_tracked_ips;
         Self {
-            global_bucket: Mutex::new(TokenBucket::new(config.global_capacity, config.global_refill_per_second)),
+            global_bucket: Mutex::new(TokenBucket::new(
+                config.global_capacity,
+                config.global_refill_per_second,
+            )),
             per_ip: Mutex::new(BoundedIpMap::new(max)),
             global_window: Mutex::new(VecDeque::new()),
             config,
@@ -135,21 +142,34 @@ impl RateLimiter {
 
     pub fn allow(&self, ip: IpAddr) -> Result<(), SynError> {
         if !self.allow_global_window() {
-            return Err(SynError::rate_limited("global sliding window", ip.to_string()));
+            return Err(SynError::rate_limited(
+                "global sliding window",
+                ip.to_string(),
+            ));
         }
 
         let mut bucket = self.global_bucket.lock();
         if !bucket.allow() {
-            return Err(SynError::rate_limited("global token bucket", ip.to_string()));
+            return Err(SynError::rate_limited(
+                "global token bucket",
+                ip.to_string(),
+            ));
         }
 
         let mut per_ip = self.per_ip.lock();
-        let entry = per_ip.get_or_insert(ip, self.config.per_ip_capacity, self.config.per_ip_refill_per_second);
+        let entry = per_ip.get_or_insert(
+            ip,
+            self.config.per_ip_capacity,
+            self.config.per_ip_refill_per_second,
+        );
 
         if entry.allow() {
             Ok(())
         } else {
-            Err(SynError::rate_limited("per-ip token bucket", ip.to_string()))
+            Err(SynError::rate_limited(
+                "per-ip token bucket",
+                ip.to_string(),
+            ))
         }
     }
 }

@@ -148,12 +148,19 @@ impl Guard for UdpAmplificationGuard {
     }
 
     fn on_payload(&self, _context: &GuardContext, payload: &[u8]) -> Result<(), SynError> {
-        if self.config.reject_malformed_tcp_probes && payload.len() < self.config.minimum_probe_bytes {
-            return Err(SynError::malformed_probe("payload too small to look like a real TCP conversation"));
+        if self.config.reject_malformed_tcp_probes
+            && payload.len() < self.config.minimum_probe_bytes
+        {
+            return Err(SynError::malformed_probe(
+                "payload too small to look like a real TCP conversation",
+            ));
         }
 
-        if self.config.reject_malformed_tcp_probes && payload.first().is_some_and(|byte| *byte == 0) {
-            return Err(SynError::malformed_probe("first byte looks suspiciously empty"));
+        if self.config.reject_malformed_tcp_probes && payload.first().is_some_and(|byte| *byte == 0)
+        {
+            return Err(SynError::malformed_probe(
+                "first byte looks suspiciously empty",
+            ));
         }
 
         Ok(())
