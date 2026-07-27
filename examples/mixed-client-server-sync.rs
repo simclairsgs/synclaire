@@ -30,8 +30,12 @@ impl SyncConnectionHandler for EchoHandler {
                         return Err(e.into());
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
-                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    break
+                }
                 Err(e) => {
                     eprintln!("Read error: {}", e);
                     break;
@@ -48,10 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = env::args().collect();
     let mode = args.get(1).map(|s| s.as_str()).unwrap_or("demo");
-    let port = args
-        .get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(9007);
+    let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(9007);
 
     match mode {
         "demo" => run_demo(),
@@ -59,7 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "client-tcp" => run_client_tcp(port),
         "client-tls" => run_client_tls(port),
         _ => {
-            eprintln!("Usage: {} [demo|server|client-tcp|client-tls] [port for client modes]", args[0]);
+            eprintln!(
+                "Usage: {} [demo|server|client-tcp|client-tls] [port for client modes]",
+                args[0]
+            );
             Ok(())
         }
     }
@@ -91,7 +95,9 @@ fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     let server = SyncServer::from_listener(listener, config, EchoHandler);
 
     let server_thread = thread::spawn(move || {
-        server.run_until_shutdown(signal).unwrap_or_else(|e| eprintln!("Server error: {}", e));
+        server
+            .run_until_shutdown(signal)
+            .unwrap_or_else(|e| eprintln!("Server error: {}", e));
     });
 
     run_client_tcp(port).unwrap_or_else(|e| eprintln!("TCP client error: {}", e));
@@ -130,7 +136,10 @@ fn run_client_tcp(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    println!("Connecting to Mixed-Mode Server (Synchronous) with plain TCP on port {}...", port);
+    println!(
+        "Connecting to Mixed-Mode Server (Synchronous) with plain TCP on port {}...",
+        port
+    );
     thread::sleep(Duration::from_millis(100));
 
     let config = ClientConfig::builder()
@@ -156,7 +165,10 @@ fn run_client_tls(port: u16) -> Result<(), Box<dyn std::error::Error>> {
     use std::thread;
     use std::time::Duration;
 
-    println!("Connecting to Mixed-Mode Server (Synchronous) with TLS on port {}...", port);
+    println!(
+        "Connecting to Mixed-Mode Server (Synchronous) with TLS on port {}...",
+        port
+    );
     thread::sleep(Duration::from_millis(100));
 
     let tls_config = TlsConfig::builder()

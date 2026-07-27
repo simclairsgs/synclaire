@@ -1,10 +1,6 @@
-use crate::{
-    config::ClientConfig,
-    handler::Connection,
-    SynError,
-};
 #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
 use crate::client::tls;
+use crate::{config::ClientConfig, handler::Connection, SynError};
 
 pub struct SyncClient {
     config: ClientConfig,
@@ -19,7 +15,7 @@ impl SyncClient {
         log::info!("client connecting to {}", self.config.connect_addr);
 
         let timeout = self.config.connection_timeout;
-        let stream = std::net::TcpStream::connect_timeout(&self.config.connect_addr.into(), timeout)?;
+        let stream = std::net::TcpStream::connect_timeout(&self.config.connect_addr, timeout)?;
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
         if let Err(error) = stream.set_nodelay(self.config.tcp_nodelay) {
@@ -33,9 +29,10 @@ impl SyncClient {
             #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             {
                 let tls_stream = tls::connect_sync(stream, &self.config.tls)?;
-                let mut metadata = crate::handler::ConnectionMetadata::new(peer_addr, local_addr, true);
+                let mut metadata =
+                    crate::handler::ConnectionMetadata::new(peer_addr, local_addr, true);
                 metadata.tls_server_name = self.config.tls.server_name.clone();
-                return Ok(Connection::from_sync_client_tls(metadata, tls_stream));
+                Ok(Connection::from_sync_client_tls(metadata, tls_stream))
             }
             #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
             return Err(SynError::UnsupportedFeature(

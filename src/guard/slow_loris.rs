@@ -6,7 +6,10 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{guard::{Guard, GuardContext}, SynError};
+use crate::{
+    guard::{Guard, GuardContext},
+    SynError,
+};
 
 #[derive(Clone, Debug)]
 pub struct SlowLorisConfig {
@@ -50,10 +53,16 @@ impl BoundedActivityMap {
     fn note(&mut self, addr: SocketAddr) {
         self.next_seq = self.next_seq.wrapping_add(1);
         let seq = self.next_seq;
-        let is_new = self.map.insert(addr, ActivityEntry {
-            last_seen: Instant::now(),
-            seq,
-        }).is_none();
+        let is_new = self
+            .map
+            .insert(
+                addr,
+                ActivityEntry {
+                    last_seen: Instant::now(),
+                    seq,
+                },
+            )
+            .is_none();
 
         self.order.push_back((addr, seq));
 
@@ -120,7 +129,10 @@ impl SlowLoris {
         if let Some(last_activity) = last_activity {
             let idle = last_activity.elapsed();
             if idle > self.config.idle_timeout + self.config.grace_period {
-                return Err(SynError::timeout(self.config.idle_timeout, "reading from a very slow client"));
+                return Err(SynError::timeout(
+                    self.config.idle_timeout,
+                    "reading from a very slow client",
+                ));
             }
         }
         Ok(())

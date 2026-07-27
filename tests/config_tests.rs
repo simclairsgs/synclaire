@@ -41,7 +41,8 @@ fn tls_builder_supports_mtls_fields() {
 
 #[test]
 fn pem_source_from_bytes_roundtrips_text() {
-    let source = PemSource::from_pem_bytes(b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n");
+    let source =
+        PemSource::from_pem_bytes(b"-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n");
     match source {
         PemSource::Inline { pem } => assert!(pem.contains("BEGIN CERTIFICATE")),
         PemSource::File { .. } => panic!("expected inline pem"),

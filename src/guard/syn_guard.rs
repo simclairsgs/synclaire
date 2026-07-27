@@ -6,7 +6,10 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{guard::{Guard, GuardContext}, SynError};
+use crate::{
+    guard::{Guard, GuardContext},
+    SynError,
+};
 
 #[derive(Clone, Debug)]
 pub struct SynGuardConfig {
@@ -86,11 +89,17 @@ impl SynGuard {
         let next_ip = state.per_ip.get(&ip).copied().unwrap_or(0) + 1;
 
         if next_total > self.config.max_half_open_global {
-            return Err(SynError::throttled("half-open global", self.config.max_half_open_global));
+            return Err(SynError::throttled(
+                "half-open global",
+                self.config.max_half_open_global,
+            ));
         }
 
         if next_ip > self.config.max_half_open_per_ip {
-            return Err(SynError::throttled("half-open per-ip", self.config.max_half_open_per_ip));
+            return Err(SynError::throttled(
+                "half-open per-ip",
+                self.config.max_half_open_per_ip,
+            ));
         }
 
         // Evict oldest IP entry if we are at the tracking cap (new IP only).
@@ -172,7 +181,10 @@ impl Guard for SynGuard {
         let state = self.state.lock();
         if let Some(started_at) = state.started_at.get(&context.peer_ip) {
             if started_at.elapsed() > self.config.syn_timeout {
-                return Err(SynError::timeout(self.config.syn_timeout, "waiting for a connection to settle"));
+                return Err(SynError::timeout(
+                    self.config.syn_timeout,
+                    "waiting for a connection to settle",
+                ));
             }
         }
         Ok(())
@@ -196,7 +208,10 @@ mod tests {
 
     #[test]
     fn half_open_counter_released_on_close_without_establish() {
-        let guard = SynGuard::new(SynGuardConfig { max_half_open_global: 2, ..Default::default() });
+        let guard = SynGuard::new(SynGuardConfig {
+            max_half_open_global: 2,
+            ..Default::default()
+        });
 
         // Reserve two connections — fills the global limit.
         guard.on_reserve(&ctx(1001)).expect("reserve 1");
@@ -214,14 +229,19 @@ mod tests {
 
     #[test]
     fn half_open_counter_not_double_decremented_after_establish() {
-        let guard = SynGuard::new(SynGuardConfig { max_half_open_global: 1, ..Default::default() });
+        let guard = SynGuard::new(SynGuardConfig {
+            max_half_open_global: 1,
+            ..Default::default()
+        });
         guard.on_reserve(&ctx(1001)).expect("reserve");
         guard.on_established(&ctx(1001)).expect("establish");
         // Close after establish — must NOT double-decrement (would underflow).
         guard.on_close(&ctx(1001));
 
         // The global counter should now be 0, allowing another connection.
-        guard.on_reserve(&ctx(1002)).expect("slot free after established close");
+        guard
+            .on_reserve(&ctx(1002))
+            .expect("slot free after established close");
     }
 
     #[test]
@@ -242,7 +262,15 @@ mod tests {
         }
 
         let state = guard.state.lock();
-        assert!(state.per_ip.len() <= 3, "per_ip grew to {}", state.per_ip.len());
-        assert!(state.ip_order.len() <= 3, "ip_order grew to {}", state.ip_order.len());
+        assert!(
+            state.per_ip.len() <= 3,
+            "per_ip grew to {}",
+            state.per_ip.len()
+        );
+        assert!(
+            state.ip_order.len() <= 3,
+            "ip_order grew to {}",
+            state.ip_order.len()
+        );
     }
 }

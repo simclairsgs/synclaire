@@ -1,13 +1,16 @@
 use std::{fs, sync::Arc};
 
-use rustls::{ClientConfig, RootCertStore, ServerConfig};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::CryptoProvider;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use rustls::{ClientConfig, RootCertStore, ServerConfig};
 use rustls::{DigitallySignedStruct, Error as TlsError, SignatureScheme};
 use rustls_pemfile as pemfile;
 
-use crate::{config::{PemSource, TlsConfig}, SynError};
+use crate::{
+    config::{PemSource, TlsConfig},
+    SynError,
+};
 
 #[derive(Debug)]
 struct NoopServerVerifier;
@@ -64,10 +67,14 @@ impl ServerCertVerifier for NoopServerVerifier {
 
 pub fn backend_name() -> &'static str {
     #[cfg(feature = "aws-lc-backend")]
-    { "rustls/aws-lc-rs" }
+    {
+        "rustls/aws-lc-rs"
+    }
 
     #[cfg(not(feature = "aws-lc-backend"))]
-    { "rustls/ring" }
+    {
+        "rustls/ring"
+    }
 }
 
 fn crypto_provider() -> Arc<CryptoProvider> {
@@ -124,7 +131,9 @@ pub fn build_server_config(tls: &TlsConfig) -> Result<Arc<ServerConfig>, SynErro
     let certs = tls
         .certificate_chain
         .as_ref()
-        .ok_or_else(|| SynError::config("server TLS is enabled but no certificate chain was provided"))
+        .ok_or_else(|| {
+            SynError::config("server TLS is enabled but no certificate chain was provided")
+        })
         .and_then(load_certs)?;
     let key = tls
         .private_key
@@ -140,18 +149,20 @@ pub fn build_server_config(tls: &TlsConfig) -> Result<Arc<ServerConfig>, SynErro
 
     let builder = if tls.require_client_auth {
         let roots = build_root_store(&tls.trust_anchors)?;
-        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(roots, crypto_provider())
-            .build()
-            .map_err(|error| SynError::tls(error.to_string()))?;
+        let verifier =
+            rustls::server::WebPkiClientVerifier::builder_with_provider(roots, crypto_provider())
+                .build()
+                .map_err(|error| SynError::tls(error.to_string()))?;
         new_builder()?.with_client_cert_verifier(verifier)
     } else if tls.trust_anchors.is_empty() {
         new_builder()?.with_no_client_auth()
     } else {
         let roots = build_root_store(&tls.trust_anchors)?;
-        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(roots, crypto_provider())
-            .allow_unauthenticated()
-            .build()
-            .map_err(|error| SynError::tls(error.to_string()))?;
+        let verifier =
+            rustls::server::WebPkiClientVerifier::builder_with_provider(roots, crypto_provider())
+                .allow_unauthenticated()
+                .build()
+                .map_err(|error| SynError::tls(error.to_string()))?;
         new_builder()?.with_client_cert_verifier(verifier)
     };
 
@@ -179,11 +190,13 @@ pub fn build_client_config(tls: &TlsConfig) -> Result<Arc<ClientConfig>, SynErro
             tls.client_certificate_chain.as_ref(),
             tls.client_private_key.as_ref(),
         ) {
-            builder.with_client_auth_cert(load_certs(cert_chain)?, load_private_key(private_key)?)?
+            builder
+                .with_client_auth_cert(load_certs(cert_chain)?, load_private_key(private_key)?)?
         } else {
             builder.with_no_client_auth()
         };
-        cfg.dangerous().set_certificate_verifier(Arc::new(NoopServerVerifier));
+        cfg.dangerous()
+            .set_certificate_verifier(Arc::new(NoopServerVerifier));
         cfg
     } else if let (Some(cert_chain), Some(private_key)) = (
         tls.client_certificate_chain.as_ref(),

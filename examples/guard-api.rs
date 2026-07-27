@@ -3,8 +3,8 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 use synclaire::guard::{
-    IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, Throttle, ThrottleConfig,
-    SynGuard, SynGuardConfig, SlowLoris, SlowLorisConfig,
+    IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, SlowLoris, SlowLorisConfig, SynGuard,
+    SynGuardConfig, Throttle, ThrottleConfig,
 };
 
 fn main() {
@@ -42,7 +42,10 @@ fn demo_ip_ban() {
 
     println!("Initial state:");
     println!("  Attacker1 banned? {}", ip_ban.is_banned(&attacker1));
-    println!("  Trusted client banned? {}", ip_ban.is_banned(&trusted_client));
+    println!(
+        "  Trusted client banned? {}",
+        ip_ban.is_banned(&trusted_client)
+    );
 
     println!("\nBanning attacker IPs...");
     ip_ban.ban(attacker1);
@@ -50,7 +53,10 @@ fn demo_ip_ban() {
 
     println!("  Attacker1 banned? {}", ip_ban.is_banned(&attacker1));
     println!("  Attacker2 banned? {}", ip_ban.is_banned(&attacker2));
-    println!("  Trusted client banned? {}", ip_ban.is_banned(&trusted_client));
+    println!(
+        "  Trusted client banned? {}",
+        ip_ban.is_banned(&trusted_client)
+    );
 
     println!("\nUnbanning attacker1...");
     ip_ban.unban(&attacker1);
@@ -74,15 +80,36 @@ fn demo_rate_limiter() {
     let _rate_limiter = RateLimiter::new(config.clone());
 
     println!("Rate Limiter Config:");
-    println!("  Per-IP: {} capacity, {} refill/sec", config.per_ip_capacity, config.per_ip_refill_per_second);
-    println!("  Global: {} capacity, {} refill/sec", config.global_capacity, config.global_refill_per_second);
-    println!("  Window: {:?}, limit: {}", config.global_window, config.global_window_limit);
+    println!(
+        "  Per-IP: {} capacity, {} refill/sec",
+        config.per_ip_capacity, config.per_ip_refill_per_second
+    );
+    println!(
+        "  Global: {} capacity, {} refill/sec",
+        config.global_capacity, config.global_refill_per_second
+    );
+    println!(
+        "  Window: {:?}, limit: {}",
+        config.global_window, config.global_window_limit
+    );
 
     println!("\n✓ Rate Limiter: Configurable per-IP and global rate limiting");
-    println!("  - Burst capacity: {} connections per IP", config.per_ip_capacity);
-    println!("  - Sustained rate: {} connections/sec per IP", config.per_ip_refill_per_second);
-    println!("  - Global burst: {} total connections", config.global_capacity);
-    println!("  - Global rate: {} connections/sec", config.global_refill_per_second);
+    println!(
+        "  - Burst capacity: {} connections per IP",
+        config.per_ip_capacity
+    );
+    println!(
+        "  - Sustained rate: {} connections/sec per IP",
+        config.per_ip_refill_per_second
+    );
+    println!(
+        "  - Global burst: {} total connections",
+        config.global_capacity
+    );
+    println!(
+        "  - Global rate: {} connections/sec",
+        config.global_refill_per_second
+    );
 }
 
 fn demo_throttle() {
@@ -94,13 +121,22 @@ fn demo_throttle() {
     let _throttle = Throttle::new(config.clone());
 
     println!("Throttle Config:");
-    println!("  Per-IP: max {} concurrent connections", config.max_connections_per_ip);
-    println!("  Global: max {} concurrent connections", config.max_connections_global);
+    println!(
+        "  Per-IP: max {} concurrent connections",
+        config.max_connections_per_ip
+    );
+    println!(
+        "  Global: max {} concurrent connections",
+        config.max_connections_global
+    );
 
     println!("\n✓ Throttle: Limits concurrent connections");
     println!("  - Prevents single IP monopolizing resources");
     println!("  - Ensures fair distribution across clients");
-    println!("  - Example: DDoS attacker limited to {} active connections", config.max_connections_per_ip);
+    println!(
+        "  - Example: DDoS attacker limited to {} active connections",
+        config.max_connections_per_ip
+    );
 }
 
 fn demo_syn_guard() {
@@ -115,14 +151,22 @@ fn demo_syn_guard() {
     let _syn_guard = SynGuard::new(config.clone());
 
     println!("SYN Guard Config:");
-    println!("  Per-IP: max {} half-open connections", config.max_half_open_per_ip);
-    println!("  Global: max {} half-open connections", config.max_half_open_global);
+    println!(
+        "  Per-IP: max {} half-open connections",
+        config.max_half_open_per_ip
+    );
+    println!(
+        "  Global: max {} half-open connections",
+        config.max_half_open_global
+    );
     println!("  Timeout: {:?}", config.syn_timeout);
 
     println!("\n✓ SYN Guard: Protects against SYN flood attacks");
     println!("  - Limits incomplete TCP handshakes");
-    println!("  - Example attack: 1000 SYN packets → rejected after {} per attacker IP", 
-             config.max_half_open_per_ip);
+    println!(
+        "  - Example attack: 1000 SYN packets → rejected after {} per attacker IP",
+        config.max_half_open_per_ip
+    );
 }
 
 fn demo_slow_loris() {
@@ -137,12 +181,17 @@ fn demo_slow_loris() {
     println!("Slow Loris Guard Config:");
     println!("  Idle timeout: {:?}", config.idle_timeout);
     println!("  Grace period: {:?}", config.grace_period);
-    println!("  Total before close: {:?}", 
-             config.idle_timeout + config.grace_period);
+    println!(
+        "  Total before close: {:?}",
+        config.idle_timeout + config.grace_period
+    );
 
     println!("\n✓ Slow Loris: Protects against slow client attacks");
     println!("  - Detects clients sending data very slowly");
-    println!("  - Closes connections idle > {} seconds", config.idle_timeout.as_secs());
+    println!(
+        "  - Closes connections idle > {} seconds",
+        config.idle_timeout.as_secs()
+    );
     println!("  - Example: Client sends 1 byte every 20 seconds → terminated after 18 seconds");
 }
 
@@ -166,10 +215,10 @@ fn demo_guard_stack() {
     println!("\nExample Attack Scenarios:");
     println!("  SYN Flood (1000/sec from 50 IPs):");
     println!("    → SynGuard: Reject after 16 per IP → ~84% blocked");
-    
+
     println!("\n  Rate Limit Attack (100 req/sec from 1 IP):");
     println!("    → RateLimiter: Allow 10/sec sustained → 90% dropped");
-    
+
     println!("\n  Slow Loris (100 clients, 1 byte/20 sec):");
     println!("    → SlowLoris: Timeout after 15 sec → Prevent resource exhaustion");
 

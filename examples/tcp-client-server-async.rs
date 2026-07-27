@@ -45,14 +45,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "demo" => run_demo().await,
         "server" => run_server().await,
         "client" => {
-            let port = args
-                .get(2)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(9002);
+            let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(9002);
             run_client(port).await
         }
         _ => {
-            eprintln!("Usage: {} [demo|server|client] [port for client mode]", args[0]);
+            eprintln!(
+                "Usage: {} [demo|server|client] [port for client mode]",
+                args[0]
+            );
             Ok(())
         }
     }
@@ -66,9 +66,7 @@ async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     let port = listener.local_addr()?.port();
     println!("Server listening on port {port}");
 
-    let config = ServerConfig::builder()
-        .name("tcp-async-server")
-        .build();
+    let config = ServerConfig::builder().name("tcp-async-server").build();
 
     let (shutdown, rx) = AsyncServer::<EchoHandler>::shutdown_channel();
     let server = AsyncServer::from_listener(listener, config, EchoHandler);
@@ -88,16 +86,19 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let port = listener.local_addr()?.port();
     println!("Server listening on port {port}");
 
-    let config = ServerConfig::builder()
-        .name("tcp-async-server")
-        .build();
+    let config = ServerConfig::builder().name("tcp-async-server").build();
 
-    AsyncServer::from_listener(listener, config, EchoHandler).run().await?;
+    AsyncServer::from_listener(listener, config, EchoHandler)
+        .run()
+        .await?;
     Ok(())
 }
 
 async fn run_client(port: u16) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to TCP Echo Server (Asynchronous) on port {}...", port);
+    println!(
+        "Connecting to TCP Echo Server (Asynchronous) on port {}...",
+        port
+    );
 
     // Give server time to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

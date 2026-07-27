@@ -13,7 +13,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<(), SynError> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("synclaire=info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("synclaire=info".parse().unwrap()),
+        )
         .try_init()
         .ok();
 
@@ -28,7 +30,11 @@ async fn main() -> Result<(), SynError> {
         .build();
     let mut connection = AsyncClient::new(config).connect().await?;
 
-    log::info!("connected tls={} peer={}", connection.is_tls(), connection.peer_addr());
+    log::info!(
+        "connected tls={} peer={}",
+        connection.is_tls(),
+        connection.peer_addr()
+    );
 
     match connection.async_stream().expect("async connection") {
         AsyncStream::Tcp(tcp) => log::info!("plain TCP socket local={:?}", tcp.local_addr().ok()),

@@ -228,7 +228,10 @@ fn guards_work_with_ipv6_addresses() {
 
     assert!(Guard::on_reserve(&limiter, &v6_ctx(1)).is_ok());
     assert!(Guard::on_reserve(&limiter, &v6_ctx(2)).is_ok());
-    assert!(Guard::on_reserve(&limiter, &v6_ctx(3)).is_err(), "should be rate limited");
+    assert!(
+        Guard::on_reserve(&limiter, &v6_ctx(3)).is_err(),
+        "should be rate limited"
+    );
 
     let throttle = Throttle::new(ThrottleConfig {
         max_connections_per_ip: 1,
@@ -237,9 +240,15 @@ fn guards_work_with_ipv6_addresses() {
 
     let ctx = v6_ctx(10);
     assert!(Guard::on_reserve(&throttle, &ctx).is_ok());
-    assert!(Guard::on_reserve(&throttle, &ctx).is_err(), "per-IP limit hit");
+    assert!(
+        Guard::on_reserve(&throttle, &ctx).is_err(),
+        "per-IP limit hit"
+    );
     Guard::on_close(&throttle, &ctx);
-    assert!(Guard::on_reserve(&throttle, &ctx).is_ok(), "released after close");
+    assert!(
+        Guard::on_reserve(&throttle, &ctx).is_ok(),
+        "released after close"
+    );
 
     let ban = IpBan::new(IpBanConfig {});
     let v6_ip = "::1".parse().unwrap();
@@ -252,8 +261,8 @@ fn guards_work_with_ipv6_addresses() {
 
 #[test]
 fn routing_ipv6_prefix_matching() {
-    use synclaire::routing::IpPrefix;
     use std::net::IpAddr;
+    use synclaire::routing::IpPrefix;
 
     let prefix = IpPrefix::v6([0x2001, 0x0db8, 0, 0, 0, 0, 0, 0], 32);
 

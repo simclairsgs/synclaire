@@ -15,12 +15,19 @@ struct TlsEchoHandler;
 
 #[cfg(feature = "async")]
 impl ConnectionHandler for TlsEchoHandler {
-    fn handle<'a>(&'a self, mut connection: synclaire::Connection) -> synclaire::handler::HandlerFuture<'a> {
+    fn handle<'a>(
+        &'a self,
+        mut connection: synclaire::Connection,
+    ) -> synclaire::handler::HandlerFuture<'a> {
         Box::pin(async move {
             let peer = connection.peer_addr();
 
             if connection.is_tls() {
-                if let Some(tls_stream) = connection.async_stream().expect("async connection").as_server_tls() {
+                if let Some(tls_stream) = connection
+                    .async_stream()
+                    .expect("async connection")
+                    .as_server_tls()
+                {
                     let (_, session) = tls_stream.get_ref();
                     let protocol = session.alpn_protocol().map(String::from_utf8_lossy);
                     log::info!("TLS handshake complete peer={} alpn={:?}", peer, protocol);
@@ -47,7 +54,9 @@ impl ConnectionHandler for TlsEchoHandler {
 #[tokio::main]
 async fn main() -> Result<(), SynError> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("synclaire=info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("synclaire=info".parse().unwrap()),
+        )
         .try_init()
         .ok();
 
@@ -69,7 +78,9 @@ async fn main() -> Result<(), SynError> {
         .accept_mode(AcceptMode::Tls)
         .build();
 
-    AsyncServer::from_listener(listener, config, TlsEchoHandler).run().await
+    AsyncServer::from_listener(listener, config, TlsEchoHandler)
+        .run()
+        .await
 }
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
@@ -89,8 +100,12 @@ impl synclaire::SyncConnectionHandler for TlsEchoHandler {
             match stream.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => stream.write_all(&buf[..n])?,
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
-                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    break
+                }
                 Err(e) => return Err(e.into()),
             }
         }

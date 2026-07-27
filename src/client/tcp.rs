@@ -2,7 +2,11 @@ use std::net::SocketAddr;
 
 use crate::handler::ConnectionMetadata;
 
-pub fn metadata(peer_addr: SocketAddr, local_addr: Option<SocketAddr>, tls: bool) -> ConnectionMetadata {
+pub fn metadata(
+    peer_addr: SocketAddr,
+    local_addr: Option<SocketAddr>,
+    tls: bool,
+) -> ConnectionMetadata {
     ConnectionMetadata::new(peer_addr, local_addr, tls)
 }
 

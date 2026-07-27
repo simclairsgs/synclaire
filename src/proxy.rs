@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::metrics::MetricsCollector;
 use crate::load_balancer::BackendPool;
+use crate::metrics::MetricsCollector;
 use crate::routing::{RouteAction, RoutingTable};
 
 use crate::config::{GuardStackConfig, TlsConfig};
@@ -205,7 +205,11 @@ impl TcpProxy {
         self.forward_to(client, None)
     }
 
-    pub fn forward_to(&self, mut client: TcpStream, override_backend: Option<SocketAddr>) -> Result<(), SynError> {
+    pub fn forward_to(
+        &self,
+        mut client: TcpStream,
+        override_backend: Option<SocketAddr>,
+    ) -> Result<(), SynError> {
         let timeout = self.config.connection_timeout;
         client.set_read_timeout(Some(timeout)).ok();
         client.set_write_timeout(Some(timeout)).ok();
@@ -219,7 +223,7 @@ impl TcpProxy {
         };
 
         let backend_addr = override_backend.unwrap_or(self.config.backend_addr);
-        let mut backend = TcpStream::connect_timeout(&backend_addr.into(), timeout)
+        let mut backend = TcpStream::connect_timeout(&backend_addr, timeout)
             .map_err(|e| SynError::connection_error(e.to_string()))?;
         backend.set_read_timeout(Some(timeout)).ok();
         backend.set_write_timeout(Some(timeout)).ok();
@@ -228,14 +232,21 @@ impl TcpProxy {
         // headers before handing off to bidirectional forwarding.
         if !trailing_payload.is_empty() {
             backend.write_all(&trailing_payload).map_err(|e| {
-                SynError::connection_error(format!("Failed to write trailing payload to backend: {}", e))
+                SynError::connection_error(format!(
+                    "Failed to write trailing payload to backend: {}",
+                    e
+                ))
             })?;
         }
 
         self.forward_bidirectional(client, backend)
     }
 
-    fn validate_http_auth_stream(&self, client: &mut TcpStream, auth: &ProxyAuth) -> Result<Vec<u8>, SynError> {
+    fn validate_http_auth_stream(
+        &self,
+        client: &mut TcpStream,
+        auth: &ProxyAuth,
+    ) -> Result<Vec<u8>, SynError> {
         let mut data = Vec::with_capacity(1024);
         let mut chunk = [0u8; 512];
 
@@ -245,7 +256,9 @@ impl TcpProxy {
             })?;
 
             if n == 0 {
-                return Err(SynError::authentication_error("connection closed before authorization headers"));
+                return Err(SynError::authentication_error(
+                    "connection closed before authorization headers",
+                ));
             }
 
             let previous_len = data.len();
@@ -257,14 +270,20 @@ impl TcpProxy {
             }
 
             if data.len() > 64 * 1024 {
-                return Err(SynError::authentication_error("proxy auth headers too large"));
+                return Err(SynError::authentication_error(
+                    "proxy auth headers too large",
+                ));
             }
         }
 
         parse_http_auth_from_bytes(&data, auth)
     }
 
-    fn forward_bidirectional(&self, mut client: TcpStream, mut backend: TcpStream) -> Result<(), SynError> {
+    fn forward_bidirectional(
+        &self,
+        mut client: TcpStream,
+        mut backend: TcpStream,
+    ) -> Result<(), SynError> {
         use std::thread;
 
         let mut client_for_reverse = client.try_clone().map_err(|e| {
@@ -343,7 +362,12 @@ impl ProxyServer {
     }
 
     pub fn run(&self) -> Result<(), SynError> {
-        if self.config.tls_offload.as_ref().is_some_and(|tls| tls.enabled) {
+        if self
+            .config
+            .tls_offload
+            .as_ref()
+            .is_some_and(|tls| tls.enabled)
+        {
             return Err(SynError::UnsupportedFeature(
                 "sync proxy TLS offload is not implemented yet",
             ));
@@ -389,7 +413,7 @@ impl ProxyServer {
                         Some(addr) => Some(addr),
                         None => {
                             log::warn!("[{}] routing pool is empty", peer_addr);
-                                                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                            let _ = stream.shutdown(std::net::Shutdown::Both);
                             continue;
                         }
                     },
@@ -406,7 +430,7 @@ impl ProxyServer {
                     Some(addr) => Some(addr),
                     None => {
                         log::warn!("[{}] backend pool is empty", peer_addr);
-                                                let _ = stream.shutdown(std::net::Shutdown::Both);
+                        let _ = stream.shutdown(std::net::Shutdown::Both);
                         continue;
                     }
                 }
@@ -487,8 +511,8 @@ impl AsyncProxyServer {
     }
 
     pub async fn run(&self) -> Result<(), SynError> {
-        use tokio::net::TcpListener;
         use tokio::io::AsyncWriteExt;
+        use tokio::net::TcpListener;
 
         let listener = TcpListener::bind(self.config.listen_addr).await?;
         let guards = build_guard_stack(&self.config.guards);
@@ -509,7 +533,11 @@ impl AsyncProxyServer {
                 }
             };
             let local_addr = stream.local_addr().ok();
-            let tls_enabled = self.config.tls_offload.as_ref().is_some_and(|tls| tls.enabled);
+            let tls_enabled = self
+                .config
+                .tls_offload
+                .as_ref()
+                .is_some_and(|tls| tls.enabled);
             let context = GuardContext::new(peer_addr, local_addr, tls_enabled);
 
             // Routing table resolves which backend to forward to.
@@ -520,7 +548,7 @@ impl AsyncProxyServer {
                         Some(addr) => Some(addr),
                         None => {
                             log::warn!("[{}] async routing pool is empty", peer_addr);
-                                                    let _ = stream.shutdown().await;
+                            let _ = stream.shutdown().await;
                             continue;
                         }
                     },
@@ -537,7 +565,7 @@ impl AsyncProxyServer {
                     Some(addr) => Some(addr),
                     None => {
                         log::warn!("[{}] async backend pool is empty", peer_addr);
-                                                let _ = stream.shutdown().await;
+                        let _ = stream.shutdown().await;
                         continue;
                     }
                 }
@@ -548,7 +576,11 @@ impl AsyncProxyServer {
             let guard_session = match guards.reserve(context.clone()) {
                 Ok(session) => session,
                 Err(error) => {
-                    log::warn!("[{}] async proxy guard rejected connection: {}", peer_addr, error);
+                    log::warn!(
+                        "[{}] async proxy guard rejected connection: {}",
+                        peer_addr,
+                        error
+                    );
                     if let Some(m) = &self.metrics {
                         m.record_failure(Some("async-proxy"), peer_addr.ip());
                     }
@@ -557,7 +589,11 @@ impl AsyncProxyServer {
             };
 
             if let Err(error) = guard_session.mark_established() {
-                log::warn!("[{}] async proxy guard establish reject: {}", peer_addr, error);
+                log::warn!(
+                    "[{}] async proxy guard establish reject: {}",
+                    peer_addr,
+                    error
+                );
                 if let Some(m) = &self.metrics {
                     m.record_failure(Some("async-proxy"), peer_addr.ip());
                 }
@@ -578,12 +614,18 @@ impl AsyncProxyServer {
                 match tokio::time::timeout(
                     timeout,
                     forward_async_connection(stream, config, auth_handle, backend_override),
-                ).await {
+                )
+                .await
+                {
                     Ok(Err(error)) => {
                         log::warn!("[{}] async proxy forwarding error: {}", peer_addr, error);
                     }
                     Err(_) => {
-                        log::debug!("[{}] async proxy connection timed out after {:?}", peer_addr, timeout);
+                        log::debug!(
+                            "[{}] async proxy connection timed out after {:?}",
+                            peer_addr,
+                            timeout
+                        );
                     }
                     Ok(Ok(())) => {}
                 }
@@ -597,7 +639,10 @@ impl AsyncProxyServer {
 }
 
 #[cfg(feature = "async")]
-fn resolve_auth(config_auth: &ProxyAuth, auth_handle: &Option<ProxyAuthHandle>) -> Result<ProxyAuth, SynError> {
+fn resolve_auth(
+    config_auth: &ProxyAuth,
+    auth_handle: &Option<ProxyAuthHandle>,
+) -> Result<ProxyAuth, SynError> {
     match auth_handle {
         Some(handle) => handle.current(),
         None => Ok(config_auth.clone()),
@@ -639,12 +684,17 @@ async fn forward_async_connection(
             let previous_len = data.len();
             data.extend_from_slice(&chunk[..read]);
             let search_from = previous_len.saturating_sub(3);
-            if let Some(index) = data[search_from..].windows(4).position(|w| w == b"\r\n\r\n") {
+            if let Some(index) = data[search_from..]
+                .windows(4)
+                .position(|w| w == b"\r\n\r\n")
+            {
                 break search_from + index + 4;
             }
 
             if data.len() > 64 * 1024 {
-                return Err(SynError::authentication_error("proxy auth headers too large"));
+                return Err(SynError::authentication_error(
+                    "proxy auth headers too large",
+                ));
             }
         };
 
@@ -670,11 +720,14 @@ async fn forward_async_connection(
         config.connection_timeout,
         tokio::net::TcpStream::connect(backend_addr),
     )
-        .await
-        .map_err(|_| SynError::connection_error(format!(
-            "backend connect to {} timed out after {:?}", backend_addr, config.connection_timeout
-        )))?
-        .map_err(|e| SynError::connection_error(e.to_string()))?;
+    .await
+    .map_err(|_| {
+        SynError::connection_error(format!(
+            "backend connect to {} timed out after {:?}",
+            backend_addr, config.connection_timeout
+        ))
+    })?
+    .map_err(|e| SynError::connection_error(e.to_string()))?;
 
     if let Some(tls) = &config.tls_offload {
         if tls.enabled {
@@ -825,9 +878,7 @@ mod tests {
         let handle = ProxyAuthHandle::new(ProxyAuth::None);
         assert_eq!(handle.current().expect("current"), ProxyAuth::None);
 
-        handle
-            .set_basic("admin", "new-secret")
-            .expect("set_basic");
+        handle.set_basic("admin", "new-secret").expect("set_basic");
         assert!(matches!(
             handle.current().expect("current"),
             ProxyAuth::Basic(user, pass) if user == "admin" && pass == "new-secret"

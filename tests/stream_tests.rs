@@ -14,7 +14,9 @@ fn make_metadata(addr: &str) -> ConnectionMetadata {
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn async_stream_tcp_variant_is_not_tls() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let _client = tokio::net::TcpStream::connect(addr).await.expect("connect");
     let (stream, peer) = listener.accept().await.expect("accept");
@@ -22,15 +24,31 @@ async fn async_stream_tcp_variant_is_not_tls() {
     let conn = Connection::from_async_tcp(make_metadata(&peer.to_string()), stream);
 
     assert!(!conn.is_tls(), "TCP connection should not report is_tls");
-    assert!(conn.async_stream().expect("async stream").as_tcp().is_some(), "should expose TcpStream");
-    assert!(conn.async_stream().expect("async stream").as_server_tls().is_none());
-    assert!(conn.async_stream().expect("async stream").as_client_tls().is_none());
+    assert!(
+        conn.async_stream()
+            .expect("async stream")
+            .as_tcp()
+            .is_some(),
+        "should expose TcpStream"
+    );
+    assert!(conn
+        .async_stream()
+        .expect("async stream")
+        .as_server_tls()
+        .is_none());
+    assert!(conn
+        .async_stream()
+        .expect("async stream")
+        .as_client_tls()
+        .is_none());
 }
 
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn async_stream_tcp_ref_gives_real_socket() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let _client = tokio::net::TcpStream::connect(addr).await.expect("connect");
     let (stream, peer) = listener.accept().await.expect("accept");
@@ -39,13 +57,18 @@ async fn async_stream_tcp_ref_gives_real_socket() {
 
     // tcp() on AsyncStream returns the underlying socket regardless of TLS wrapping.
     let tcp_ref = conn.async_stream().expect("async stream").tcp();
-    assert!(tcp_ref.local_addr().is_ok(), "socket should have a local addr");
+    assert!(
+        tcp_ref.local_addr().is_ok(),
+        "socket should have a local addr"
+    );
 }
 
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn async_stream_can_be_moved_out() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let _client = tokio::net::TcpStream::connect(addr).await.expect("connect");
     let (stream, peer) = listener.accept().await.expect("accept");
@@ -69,7 +92,9 @@ async fn async_stream_can_be_moved_out() {
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn connection_stream_is_tls_delegates_to_variant() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let _client = tokio::net::TcpStream::connect(addr).await.expect("connect");
     let (stream, peer) = listener.accept().await.expect("accept");
@@ -95,9 +120,7 @@ fn accept_mode_default_is_tcp() {
 fn accept_mode_builder_sets_tls_and_mixed() {
     use synclaire::AcceptMode;
 
-    let tls_config = ServerConfig::builder()
-        .accept_mode(AcceptMode::Tls)
-        .build();
+    let tls_config = ServerConfig::builder().accept_mode(AcceptMode::Tls).build();
     assert_eq!(tls_config.accept_mode, AcceptMode::Tls);
 
     let mixed_config = ServerConfig::builder()
@@ -113,14 +136,17 @@ fn accept_mode_builder_sets_tls_and_mixed() {
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn async_server_enforces_connection_timeout() {
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
     use synclaire::{
         config::ServerConfig,
-        handler::{Connection, HandlerFuture, ConnectionHandler},
+        handler::{Connection, ConnectionHandler, HandlerFuture},
         server::async_server::AsyncServer,
-    };
-    use std::{
-        sync::{Arc, atomic::{AtomicBool, Ordering}},
-        time::Duration,
     };
 
     struct SlowHandler {
@@ -140,7 +166,9 @@ async fn async_server_enforces_connection_timeout() {
     }
 
     let started = Arc::new(AtomicBool::new(false));
-    let handler = SlowHandler { started: Arc::clone(&started) };
+    let handler = SlowHandler {
+        started: Arc::clone(&started),
+    };
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -154,7 +182,10 @@ async fn async_server_enforces_connection_timeout() {
 
     let (shutdown_tx, shutdown_rx) = AsyncServer::<SlowHandler>::shutdown_channel();
     tokio::spawn(async move {
-        AsyncServer::new(config, handler).run_until_shutdown(shutdown_rx).await.ok();
+        AsyncServer::new(config, handler)
+            .run_until_shutdown(shutdown_rx)
+            .await
+            .ok();
     });
     // Give the server time to start listening.
     tokio::time::sleep(Duration::from_millis(20)).await;
@@ -168,7 +199,10 @@ async fn async_server_enforces_connection_timeout() {
     let _ = tokio::io::AsyncReadExt::read(&mut client, &mut buf).await;
     let elapsed = t0.elapsed();
 
-    assert!(started.load(Ordering::SeqCst), "handler should have been invoked");
+    assert!(
+        started.load(Ordering::SeqCst),
+        "handler should have been invoked"
+    );
     // Timeout is 100 ms; allow generous headroom for CI overhead but far less
     // than the handler's 10-second sleep — proving the timeout fired.
     assert!(
@@ -187,14 +221,16 @@ async fn async_server_enforces_connection_timeout() {
 #[cfg(feature = "async")]
 #[tokio::test]
 async fn handler_closure_receives_concrete_tcp_stream() {
-    use synclaire::AsyncServer;
     use std::sync::{Arc, Mutex};
+    use synclaire::AsyncServer;
 
     let got_tls: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(None));
     let got_tls_clone = Arc::clone(&got_tls);
 
     // Pick an ephemeral port and bind before the server so we know the address.
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
     let server_addr = listener.local_addr().expect("local addr");
     drop(listener);
 
@@ -220,7 +256,9 @@ async fn handler_closure_receives_concrete_tcp_stream() {
     tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
 
     // Connect as a plain TCP client.
-    let mut client = tokio::net::TcpStream::connect(server_addr).await.expect("connect");
+    let mut client = tokio::net::TcpStream::connect(server_addr)
+        .await
+        .expect("connect");
     tokio::io::AsyncWriteExt::shutdown(&mut client).await.ok();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -249,8 +287,7 @@ fn sync_server_accepts_sync_handler() {
     use synclaire::{
         handler::{Connection, SyncConnectionHandler},
         server::sync_server::SyncServer,
-        SynError,
-        ServerConfig,
+        ServerConfig, SynError,
     };
 
     struct EchoHandler {
@@ -265,17 +302,24 @@ fn sync_server_accepts_sync_handler() {
     }
 
     let handled = Arc::new(AtomicBool::new(false));
-    let handler = EchoHandler { handled: Arc::clone(&handled) };
+    let handler = EchoHandler {
+        handled: Arc::clone(&handled),
+    };
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
 
-    let config = ServerConfig { bind_addr: addr, ..Default::default() };
+    let config = ServerConfig {
+        bind_addr: addr,
+        ..Default::default()
+    };
     let (shutdown_tx, shutdown_rx) = SyncServer::<EchoHandler>::shutdown_channel();
 
     let server_thread = thread::spawn(move || {
-        SyncServer::new(config, handler).run_until_shutdown(shutdown_rx).ok();
+        SyncServer::new(config, handler)
+            .run_until_shutdown(shutdown_rx)
+            .ok();
     });
 
     thread::sleep(Duration::from_millis(50));

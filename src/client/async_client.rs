@@ -1,11 +1,6 @@
-use crate::{
-    client::tcp,
-    config::ClientConfig,
-    handler::Connection,
-    SynError,
-};
 #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
 use crate::client::tls;
+use crate::{client::tcp, config::ClientConfig, handler::Connection, SynError};
 
 pub struct AsyncClient {
     config: ClientConfig,
@@ -21,9 +16,12 @@ impl AsyncClient {
         let addr = self.config.connect_addr;
         tokio::time::timeout(timeout, self.connect_inner())
             .await
-            .map_err(|_| SynError::connection_error(format!(
-                "connection to {} timed out after {:?}", addr, timeout
-            )))?
+            .map_err(|_| {
+                SynError::connection_error(format!(
+                    "connection to {} timed out after {:?}",
+                    addr, timeout
+                ))
+            })?
     }
 
     async fn connect_inner(self) -> Result<Connection, SynError> {
@@ -41,9 +39,10 @@ impl AsyncClient {
             #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
             {
                 let tls_stream = tls::connect_async(stream, &self.config.tls).await?;
-                let mut metadata = crate::handler::ConnectionMetadata::new(peer_addr, local_addr, true);
+                let mut metadata =
+                    crate::handler::ConnectionMetadata::new(peer_addr, local_addr, true);
                 metadata.tls_server_name = self.config.tls.server_name.clone();
-                return Ok(Connection::from_client_tls(metadata, tls_stream));
+                Ok(Connection::from_client_tls(metadata, tls_stream))
             }
             #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
             return Err(SynError::UnsupportedFeature(

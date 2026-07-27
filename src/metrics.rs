@@ -1,8 +1,8 @@
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct ConnectionMetrics {
@@ -47,10 +47,10 @@ pub struct MetricsCollector {
     mtls_total: Arc<AtomicU64>,
     failed: Arc<AtomicU64>,
     active: Arc<AtomicU64>,
-    latency_sum_ms: Arc<AtomicU64>,    // Total latency sum in ms
-    latency_count: Arc<AtomicU64>,     // Count of latency measurements
-    min_latency_ms: Arc<Mutex<u64>>,   // Minimum observed latency
-    max_latency_ms: Arc<Mutex<u64>>,   // Maximum observed latency
+    latency_sum_ms: Arc<AtomicU64>,  // Total latency sum in ms
+    latency_count: Arc<AtomicU64>,   // Count of latency measurements
+    min_latency_ms: Arc<Mutex<u64>>, // Minimum observed latency
+    max_latency_ms: Arc<Mutex<u64>>, // Maximum observed latency
     per_server: Arc<Mutex<HashMap<String, PerServerMetrics>>>,
     per_ip: Arc<Mutex<HashMap<IpAddr, PerIpMetrics>>>,
     callbacks: Arc<Mutex<Vec<Arc<dyn MetricsCallback>>>>,
@@ -104,15 +104,18 @@ impl MetricsCollector {
                 m.tcp += 1;
                 m.active += 1;
             } else {
-                per_server.insert(name.to_string(), PerServerMetrics {
-                    tcp: 1,
-                    tls: 0,
-                    mtls: 0,
-                    active: 1,
-                    failures: 0,
-                    latency_sum_ms: 0,
-                    latency_count: 0,
-                });
+                per_server.insert(
+                    name.to_string(),
+                    PerServerMetrics {
+                        tcp: 1,
+                        tls: 0,
+                        mtls: 0,
+                        active: 1,
+                        failures: 0,
+                        latency_sum_ms: 0,
+                        latency_count: 0,
+                    },
+                );
             }
         }
 
@@ -142,15 +145,18 @@ impl MetricsCollector {
                 m.tls += 1;
                 m.active += 1;
             } else {
-                per_server.insert(name.to_string(), PerServerMetrics {
-                    tcp: 0,
-                    tls: 1,
-                    mtls: 0,
-                    active: 1,
-                    failures: 0,
-                    latency_sum_ms: 0,
-                    latency_count: 0,
-                });
+                per_server.insert(
+                    name.to_string(),
+                    PerServerMetrics {
+                        tcp: 0,
+                        tls: 1,
+                        mtls: 0,
+                        active: 1,
+                        failures: 0,
+                        latency_sum_ms: 0,
+                        latency_count: 0,
+                    },
+                );
             }
         }
 
@@ -180,15 +186,18 @@ impl MetricsCollector {
                 m.mtls += 1;
                 m.active += 1;
             } else {
-                per_server.insert(name.to_string(), PerServerMetrics {
-                    tcp: 0,
-                    tls: 0,
-                    mtls: 1,
-                    active: 1,
-                    failures: 0,
-                    latency_sum_ms: 0,
-                    latency_count: 0,
-                });
+                per_server.insert(
+                    name.to_string(),
+                    PerServerMetrics {
+                        tcp: 0,
+                        tls: 0,
+                        mtls: 1,
+                        active: 1,
+                        failures: 0,
+                        latency_sum_ms: 0,
+                        latency_count: 0,
+                    },
+                );
             }
         }
 
@@ -216,15 +225,18 @@ impl MetricsCollector {
             if let Some(m) = per_server.get_mut(name) {
                 m.failures += 1;
             } else {
-                per_server.insert(name.to_string(), PerServerMetrics {
-                    tcp: 0,
-                    tls: 0,
-                    mtls: 0,
-                    active: 0,
-                    failures: 1,
-                    latency_sum_ms: 0,
-                    latency_count: 0,
-                });
+                per_server.insert(
+                    name.to_string(),
+                    PerServerMetrics {
+                        tcp: 0,
+                        tls: 0,
+                        mtls: 0,
+                        active: 0,
+                        failures: 1,
+                        latency_sum_ms: 0,
+                        latency_count: 0,
+                    },
+                );
             }
         }
 
@@ -243,9 +255,11 @@ impl MetricsCollector {
 
     pub fn record_connection_close(&self, server_name: Option<&str>, peer_ip: IpAddr) {
         // Saturate at 0 to prevent wrapping on double-close.
-        self.active.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-            Some(v.saturating_sub(1))
-        }).ok();
+        self.active
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
+                Some(v.saturating_sub(1))
+            })
+            .ok();
 
         if let Some(name) = server_name {
             let mut per_server = self.per_server.lock();
@@ -264,7 +278,12 @@ impl MetricsCollector {
         }
     }
 
-    pub fn record_connection_latency(&self, server_name: Option<&str>, peer_ip: IpAddr, latency_ms: u64) {
+    pub fn record_connection_latency(
+        &self,
+        server_name: Option<&str>,
+        peer_ip: IpAddr,
+        latency_ms: u64,
+    ) {
         // Update global latency metrics
         self.latency_sum_ms.fetch_add(latency_ms, Ordering::Relaxed);
         self.latency_count.fetch_add(1, Ordering::Relaxed);
@@ -361,7 +380,11 @@ impl MetricsCollector {
 
         let min_latency_ms = {
             let min = self.min_latency_ms.lock();
-            if *min == u64::MAX { 0 } else { *min }
+            if *min == u64::MAX {
+                0
+            } else {
+                *min
+            }
         };
 
         let max_latency_ms = *self.max_latency_ms.lock();
@@ -411,10 +434,10 @@ impl Clone for MetricsCollector {
             mtls_total: Arc::clone(&self.mtls_total),
             failed: Arc::clone(&self.failed),
             active: Arc::clone(&self.active),
-                       latency_sum_ms: Arc::clone(&self.latency_sum_ms),
-                       latency_count: Arc::clone(&self.latency_count),
-                       min_latency_ms: Arc::clone(&self.min_latency_ms),
-                       max_latency_ms: Arc::clone(&self.max_latency_ms),
+            latency_sum_ms: Arc::clone(&self.latency_sum_ms),
+            latency_count: Arc::clone(&self.latency_count),
+            min_latency_ms: Arc::clone(&self.min_latency_ms),
+            max_latency_ms: Arc::clone(&self.max_latency_ms),
             per_server: Arc::clone(&self.per_server),
             per_ip: Arc::clone(&self.per_ip),
             callbacks: Arc::clone(&self.callbacks),

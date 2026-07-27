@@ -1,7 +1,11 @@
 use std::{future::Future, net::SocketAddr};
 
 #[cfg(feature = "async")]
-use std::{io, pin::Pin, task::{Context, Poll}};
+use std::{
+    io,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 #[cfg(feature = "async")]
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -56,27 +60,49 @@ impl AsyncStream {
     }
 
     pub fn as_tcp(&self) -> Option<&tokio::net::TcpStream> {
-        match self { AsyncStream::Tcp(s) => Some(s), _ => None }
+        match self {
+            AsyncStream::Tcp(s) => Some(s),
+            _ => None,
+        }
     }
 
     pub fn as_tcp_mut(&mut self) -> Option<&mut tokio::net::TcpStream> {
-        match self { AsyncStream::Tcp(s) => Some(s), _ => None }
+        match self {
+            AsyncStream::Tcp(s) => Some(s),
+            _ => None,
+        }
     }
 
     pub fn as_server_tls(&self) -> Option<&tokio_rustls::server::TlsStream<tokio::net::TcpStream>> {
-        match self { AsyncStream::ServerTls(s) => Some(s), _ => None }
+        match self {
+            AsyncStream::ServerTls(s) => Some(s),
+            _ => None,
+        }
     }
 
-    pub fn as_server_tls_mut(&mut self) -> Option<&mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>> {
-        match self { AsyncStream::ServerTls(s) => Some(s), _ => None }
+    pub fn as_server_tls_mut(
+        &mut self,
+    ) -> Option<&mut tokio_rustls::server::TlsStream<tokio::net::TcpStream>> {
+        match self {
+            AsyncStream::ServerTls(s) => Some(s),
+            _ => None,
+        }
     }
 
     pub fn as_client_tls(&self) -> Option<&tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
-        match self { AsyncStream::ClientTls(s) => Some(s), _ => None }
+        match self {
+            AsyncStream::ClientTls(s) => Some(s),
+            _ => None,
+        }
     }
 
-    pub fn as_client_tls_mut(&mut self) -> Option<&mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
-        match self { AsyncStream::ClientTls(s) => Some(s), _ => None }
+    pub fn as_client_tls_mut(
+        &mut self,
+    ) -> Option<&mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+        match self {
+            AsyncStream::ClientTls(s) => Some(s),
+            _ => None,
+        }
     }
 
     pub fn tcp(&self) -> &tokio::net::TcpStream {
@@ -90,7 +116,11 @@ impl AsyncStream {
 
 #[cfg(feature = "async")]
 impl AsyncRead for AsyncStream {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         match self.get_mut() {
             AsyncStream::Tcp(s) => Pin::new(s).poll_read(cx, buf),
             AsyncStream::ServerTls(s) => Pin::new(s).poll_read(cx, buf),
@@ -101,7 +131,11 @@ impl AsyncRead for AsyncStream {
 
 #[cfg(feature = "async")]
 impl AsyncWrite for AsyncStream {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
             AsyncStream::Tcp(s) => Pin::new(s).poll_write(cx, buf),
             AsyncStream::ServerTls(s) => Pin::new(s).poll_write(cx, buf),
@@ -137,9 +171,13 @@ pub enum SyncStream {
 impl SyncStream {
     pub fn is_tls(&self) -> bool {
         #[cfg(any(feature = "rustls-backend", feature = "aws-lc-backend"))]
-        { matches!(self, SyncStream::ServerTls(_) | SyncStream::ClientTls(_)) }
+        {
+            matches!(self, SyncStream::ServerTls(_) | SyncStream::ClientTls(_))
+        }
         #[cfg(not(any(feature = "rustls-backend", feature = "aws-lc-backend")))]
-        { false }
+        {
+            false
+        }
     }
 }
 
@@ -262,7 +300,11 @@ pub struct Connection {
 impl Connection {
     #[cfg(feature = "async")]
     pub fn from_async_tcp(metadata: ConnectionMetadata, stream: tokio::net::TcpStream) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Async(AsyncStream::Tcp(stream))), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Async(AsyncStream::Tcp(stream))),
+            guard_session: None,
+        }
     }
 
     #[cfg(feature = "async")]
@@ -270,7 +312,11 @@ impl Connection {
         metadata: ConnectionMetadata,
         stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
     ) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Async(AsyncStream::ServerTls(stream))), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Async(AsyncStream::ServerTls(stream))),
+            guard_session: None,
+        }
     }
 
     #[cfg(feature = "async")]
@@ -278,33 +324,59 @@ impl Connection {
         metadata: ConnectionMetadata,
         stream: tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
     ) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Async(AsyncStream::ClientTls(stream))), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Async(AsyncStream::ClientTls(stream))),
+            guard_session: None,
+        }
     }
 
     #[cfg(feature = "async")]
     pub fn from_async_stream(metadata: ConnectionMetadata, stream: AsyncStream) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Async(stream)), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Async(stream)),
+            guard_session: None,
+        }
     }
 
     #[cfg(feature = "sync")]
     pub fn from_sync_tcp(metadata: ConnectionMetadata, stream: std::net::TcpStream) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Sync(SyncStream::Tcp(stream))), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Sync(SyncStream::Tcp(stream))),
+            guard_session: None,
+        }
     }
 
-    #[cfg(all(feature = "sync", any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+    #[cfg(all(
+        feature = "sync",
+        any(feature = "rustls-backend", feature = "aws-lc-backend")
+    ))]
     pub(crate) fn from_sync_server_tls(
         metadata: ConnectionMetadata,
         stream: rustls::StreamOwned<rustls::ServerConnection, std::net::TcpStream>,
     ) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Sync(SyncStream::ServerTls(stream))), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Sync(SyncStream::ServerTls(stream))),
+            guard_session: None,
+        }
     }
 
-    #[cfg(all(feature = "sync", any(feature = "rustls-backend", feature = "aws-lc-backend")))]
+    #[cfg(all(
+        feature = "sync",
+        any(feature = "rustls-backend", feature = "aws-lc-backend")
+    ))]
     pub(crate) fn from_sync_client_tls(
         metadata: ConnectionMetadata,
         stream: rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>,
     ) -> Self {
-        Self { metadata, stream: Some(ConnectionStream::Sync(SyncStream::ClientTls(stream))), guard_session: None }
+        Self {
+            metadata,
+            stream: Some(ConnectionStream::Sync(SyncStream::ClientTls(stream))),
+            guard_session: None,
+        }
     }
 
     pub(crate) fn with_guard_session(mut self, guard_session: GuardSession) -> Self {
@@ -358,7 +430,9 @@ impl Connection {
 
     #[cfg(feature = "async")]
     pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize, SynError> {
-        let stream = self.stream.as_mut()
+        let stream = self
+            .stream
+            .as_mut()
             .ok_or_else(|| SynError::connection_error("stream taken"))?
             .as_async_mut()
             .ok_or_else(|| SynError::connection_error("async stream required"))?;
@@ -374,7 +448,9 @@ impl Connection {
     #[cfg(feature = "async")]
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), SynError> {
         {
-            let stream = self.stream.as_mut()
+            let stream = self
+                .stream
+                .as_mut()
                 .ok_or_else(|| SynError::connection_error("stream taken"))?
                 .as_async_mut()
                 .ok_or_else(|| SynError::connection_error("async stream required"))?;
@@ -389,7 +465,12 @@ impl Connection {
     #[cfg(feature = "async")]
     pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), SynError> {
         {
-            let stream = self.stream.as_mut().expect("stream taken").as_async_mut().expect("async stream");
+            let stream = self
+                .stream
+                .as_mut()
+                .expect("stream taken")
+                .as_async_mut()
+                .expect("async stream");
             tokio::io::AsyncWriteExt::write_all(stream, buf).await?;
         }
         if let Some(session) = &self.guard_session {
@@ -400,14 +481,21 @@ impl Connection {
 
     #[cfg(feature = "async")]
     pub async fn flush(&mut self) -> Result<(), SynError> {
-        let stream = self.stream.as_mut().expect("stream taken").as_async_mut().expect("async stream");
+        let stream = self
+            .stream
+            .as_mut()
+            .expect("stream taken")
+            .as_async_mut()
+            .expect("async stream");
         tokio::io::AsyncWriteExt::flush(stream).await?;
         Ok(())
     }
 
     #[cfg(feature = "async")]
     pub async fn shutdown(&mut self) -> Result<(), SynError> {
-        let stream = self.stream.as_mut()
+        let stream = self
+            .stream
+            .as_mut()
             .ok_or_else(|| SynError::connection_error("stream taken"))?
             .as_async_mut()
             .ok_or_else(|| SynError::connection_error("async stream required"))?;
@@ -455,7 +543,10 @@ where
     }
 }
 
-pub(crate) fn attach_guard_session(connection: Connection, guard_session: GuardSession) -> Connection {
+pub(crate) fn attach_guard_session(
+    connection: Connection,
+    guard_session: GuardSession,
+) -> Connection {
     connection.with_guard_session(guard_session)
 }
 
@@ -466,15 +557,27 @@ mod tests {
     #[cfg(feature = "async")]
     #[tokio::test]
     async fn async_tcp_stream_is_accessible_and_movable() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
         let addr = listener.local_addr().expect("local addr");
-        let _client = tokio::net::TcpStream::connect(addr).await.expect("client connect");
+        let _client = tokio::net::TcpStream::connect(addr)
+            .await
+            .expect("client connect");
         let (server_stream, peer_addr) = listener.accept().await.expect("accept");
         let metadata = ConnectionMetadata::new(peer_addr, None, false);
         let connection = Connection::from_async_tcp(metadata, server_stream);
         assert!(!connection.is_tls());
-        assert!(connection.async_stream().expect("async stream").as_tcp().is_some());
-        assert!(connection.async_stream().expect("async stream").as_server_tls().is_none());
+        assert!(connection
+            .async_stream()
+            .expect("async stream")
+            .as_tcp()
+            .is_some());
+        assert!(connection
+            .async_stream()
+            .expect("async stream")
+            .as_server_tls()
+            .is_none());
         match connection.into_stream().into_async().expect("async stream") {
             AsyncStream::Tcp(_) => {}
             _ => panic!("expected TCP stream"),

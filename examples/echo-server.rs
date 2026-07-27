@@ -14,7 +14,10 @@ struct EchoHandler;
 
 #[cfg(feature = "async")]
 impl ConnectionHandler for EchoHandler {
-    fn handle<'a>(&'a self, mut connection: synclaire::Connection) -> synclaire::handler::HandlerFuture<'a> {
+    fn handle<'a>(
+        &'a self,
+        mut connection: synclaire::Connection,
+    ) -> synclaire::handler::HandlerFuture<'a> {
         Box::pin(async move {
             let tls = connection.is_tls();
             let peer = connection.peer_addr();
@@ -59,8 +62,12 @@ impl synclaire::SyncConnectionHandler for EchoHandler {
             match stream.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => stream.write_all(&buf[..n])?,
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut
-                       || e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    break
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -72,7 +79,9 @@ impl synclaire::SyncConnectionHandler for EchoHandler {
 #[tokio::main]
 async fn main() -> Result<(), SynError> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("synclaire=info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("synclaire=info".parse().unwrap()),
+        )
         .try_init()
         .ok();
 
@@ -85,7 +94,9 @@ async fn main() -> Result<(), SynError> {
         .connection_timeout(Duration::from_secs(60))
         .build();
 
-    AsyncServer::from_listener(listener, config, EchoHandler).run().await
+    AsyncServer::from_listener(listener, config, EchoHandler)
+        .run()
+        .await
 }
 
 #[cfg(all(not(feature = "async"), feature = "sync"))]
@@ -94,9 +105,7 @@ fn main() -> Result<(), SynError> {
     let port = listener.local_addr()?.port();
     log::info!("starting echo server on port {}", port);
 
-    let config = ServerConfig::builder()
-        .name("echo-server")
-        .build();
+    let config = ServerConfig::builder().name("echo-server").build();
     synclaire::SyncServer::from_listener(listener, config, EchoHandler).run()
 }
 

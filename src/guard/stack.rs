@@ -1,8 +1,19 @@
-use std::{collections::HashSet, net::IpAddr, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Instant};
+use std::{
+    collections::HashSet,
+    net::IpAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 
 use parking_lot::RwLock;
 
-use crate::{guard::{Guard, GuardContext, GuardDecision, GuardEvent, GuardEventKind, GuardObserver}, SynError};
+use crate::{
+    guard::{Guard, GuardContext, GuardDecision, GuardEvent, GuardEventKind, GuardObserver},
+    SynError,
+};
 
 #[derive(Clone, Default)]
 pub struct Allowlist {
@@ -101,7 +112,10 @@ impl GuardStack {
                     guard: guard.name(),
                     kind: GuardEventKind::Reserve,
                     peer_addr: context.peer_addr,
-                    decision: GuardDecision::Deny(SynError::guard_rejected(guard.name(), reason.clone())),
+                    decision: GuardDecision::Deny(SynError::guard_rejected(
+                        guard.name(),
+                        reason.clone(),
+                    )),
                     detail: format!("{} rejected reservation", guard.name()),
                     occurred_at: Instant::now(),
                 });
@@ -268,7 +282,13 @@ mod tests {
     use super::*;
     use crate::guard::{Guard, GuardContext};
     use crate::SynError;
-    use std::{net::SocketAddr, sync::{atomic::{AtomicUsize, Ordering}, Arc}};
+    use std::{
+        net::SocketAddr,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+    };
 
     struct CountingGuard {
         reserves: Arc<AtomicUsize>,
@@ -277,7 +297,9 @@ mod tests {
     }
 
     impl Guard for CountingGuard {
-        fn name(&self) -> &'static str { "counting" }
+        fn name(&self) -> &'static str {
+            "counting"
+        }
         fn on_reserve(&self, _ctx: &GuardContext) -> Result<(), SynError> {
             if self.reject_on_reserve {
                 return Err(SynError::runtime("intentional reject"));
@@ -316,7 +338,11 @@ mod tests {
 
         assert!(result.is_err(), "stack should reject");
         assert_eq!(reserves.load(Ordering::SeqCst), 1, "first guard reserved");
-        assert_eq!(closes.load(Ordering::SeqCst), 1, "first guard must be closed on rollback");
+        assert_eq!(
+            closes.load(Ordering::SeqCst),
+            1,
+            "first guard must be closed on rollback"
+        );
     }
 
     #[test]
@@ -333,14 +359,25 @@ mod tests {
         let allowlist = Allowlist::new();
         allowlist.allow("127.0.0.1".parse().unwrap());
 
-        let stack = GuardStack::builder().push(guard).allowlist(allowlist).build();
+        let stack = GuardStack::builder()
+            .push(guard)
+            .allowlist(allowlist)
+            .build();
         let session = stack.reserve(ctx());
 
         assert!(session.is_ok(), "allowlisted IP must bypass guards");
-        assert_eq!(reserves.load(Ordering::SeqCst), 0, "guard should not be called");
+        assert_eq!(
+            reserves.load(Ordering::SeqCst),
+            0,
+            "guard should not be called"
+        );
 
         drop(session);
-        assert_eq!(closes.load(Ordering::SeqCst), 0, "guard on_close should not be called");
+        assert_eq!(
+            closes.load(Ordering::SeqCst),
+            0,
+            "guard on_close should not be called"
+        );
     }
 
     #[test]
@@ -354,7 +391,10 @@ mod tests {
         let allowlist = Allowlist::new();
         allowlist.allow("10.0.0.1".parse().unwrap());
 
-        let stack = GuardStack::builder().push(guard).allowlist(allowlist).build();
+        let stack = GuardStack::builder()
+            .push(guard)
+            .allowlist(allowlist)
+            .build();
         let result = stack.reserve(ctx());
 
         assert!(result.is_err(), "non-allowlisted IP must still be checked");

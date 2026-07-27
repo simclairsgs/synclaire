@@ -1,7 +1,9 @@
 //! synclaire: where every connection is handled with clarity.
 
+pub(crate) mod cleanup;
 pub mod client;
 pub mod config;
+pub mod connection_filter;
 pub mod error;
 pub mod guard;
 pub mod handler;
@@ -11,32 +13,33 @@ pub mod proxy;
 pub mod routing;
 pub mod server;
 pub mod tls;
-pub mod connection_filter;
-pub(crate) mod cleanup;
 
 pub use config::{AcceptMode, ClientConfig, GuardStackConfig, PemSource, ServerConfig, TlsConfig};
+pub use connection_filter::{
+    BoxedConnectionFilter, CompositeFilter, ConnectionFilter, IpBlocklistFilter, IpWhitelistFilter,
+    TlsOnlyFilter,
+};
 pub use error::SynError;
-pub use guard::{Allowlist, IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, SlowLorisConfig, SynGuardConfig, ThrottleConfig};
-pub use load_balancer::{Backend, BackendPool, LoadBalancerStrategy, StickyKey};
-pub use handler::{Connection, ConnectionMetadata, ConnectionStream};
+pub use guard::{
+    Allowlist, IpBan, IpBanConfig, RateLimiter, RateLimiterConfig, SlowLorisConfig, SynGuardConfig,
+    ThrottleConfig,
+};
 #[cfg(feature = "async")]
 pub use handler::AsyncStream;
 #[cfg(any(feature = "async", feature = "sync"))]
 pub use handler::ConnectionHandler;
+pub use handler::{Connection, ConnectionMetadata, ConnectionStream};
+pub use load_balancer::{Backend, BackendPool, LoadBalancerStrategy, StickyKey};
 pub use metrics::{ConnectionMetrics, LoggingMetricsCallback, MetricsCallback, MetricsCollector};
-pub use proxy::{ProxyAuth, ProxyAuthHandle, ProxyClient, ProxyConfig, ProxyServer, TcpProxy};
-pub use routing::{IpGroup, IpPrefix, RouteAction, RoutingRule, RoutingTable};
 #[cfg(feature = "async")]
 pub use proxy::AsyncProxyServer;
-pub use connection_filter::{
-	ConnectionFilter, BoxedConnectionFilter, IpWhitelistFilter, IpBlocklistFilter, 
-	TlsOnlyFilter, CompositeFilter
-};
+pub use proxy::{ProxyAuth, ProxyAuthHandle, ProxyClient, ProxyConfig, ProxyServer, TcpProxy};
+pub use routing::{IpGroup, IpPrefix, RouteAction, RoutingRule, RoutingTable};
 
 #[cfg(feature = "sync")]
-pub use handler::SyncStream;
-#[cfg(feature = "sync")]
 pub use handler::SyncConnectionHandler;
+#[cfg(feature = "sync")]
+pub use handler::SyncStream;
 
 pub type Result<T> = std::result::Result<T, SynError>;
 
